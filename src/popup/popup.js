@@ -1,5 +1,7 @@
-/* popup.js — Astra · Древо Щит · v0.6.1
-   Обновление v0.6.1: компактный счётчик сэкономленного трафика (trafficStats) в футере попапа.
+/* popup.js — Astra · Древо Щит · v0.6.2
+   Обновление v0.6.2:
+   - B28: Отображение причин угрозы при обнаружении фишинга или подозрительного домена в statusHost.
+   - B29: Синхронизация счётчика заблокированных элементов в футере попапа.
 */
 import { loadConfig, saveConfig } from '../shared/config.js';
 
@@ -74,7 +76,6 @@ async function toggleUserRuleFromPopup(tabId, host, selector, sizeLabel) {
   }
   return savedNow;
 }
-
 async function renderAnalysis() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return;
@@ -128,6 +129,7 @@ async function renderAnalysis() {
         if (b.links?.length) badges.push(`🔗 ${b.links.length}`);
         if (b.images?.length) badges.push(`🖼️ ${b.images.length}`);
         if (b.iframes?.length) badges.push(`📦 iframe`);
+
         const badgesHtml = badges.length
           ? `<span class="block-badges">${badges.join(' · ')}</span>`
           : '';
@@ -140,7 +142,6 @@ async function renderAnalysis() {
         const wlBtnHtml = (currentHost && !isSiteWhitelisted)
           ? `<button type="button" class="block-act-btn" data-act="wl" title="Добавить ${escapeHtml(currentHost)} в исключения">🤍 Исключить сайт</button>`
           : '';
-
         li.innerHTML = `
           <div class="url" title="${escapeHtml(b.selector)}">${escapeHtml(b.selector)}</div>
           ${previewHtml}
@@ -298,14 +299,16 @@ async function init() {
     blockBtn.style.display = 'none';
     whitelistBtn.style.display = 'none';
   } else {
-    const { risk, host } = resp.status;
+    const { risk, host, reasons = [] } = resp.status;
     currentHost = host;
 
     box.classList.remove('ok', 'warn', 'danger');
     box.classList.add(risk);
     icon.textContent = risk === 'danger' ? '⛔' : risk === 'warn' ? '⚠️' : '🛡️';
     title.textContent = risk === 'danger' ? 'Опасный сайт' : risk === 'warn' ? 'Подозрительный сайт' : 'Сайт безопасен';
-    hostEl.textContent = host || '—';
+    hostEl.textContent = reasons.length && risk !== 'ok'
+      ? `${host || '—'} · ${reasons[0]}`
+      : (host || '—');
 
     if (host) {
       const userBlocklist = resp.adblock?.userBlocklist || [];
@@ -339,14 +342,16 @@ async function init() {
     }
   }
 
-  if (resp && resp.stats) {
-    $('#statBlocked').textContent = resp.stats.blocked;
-    $('#statThreats').textContent = resp.stats.threatsToday;
-  }
-
   const tStats = resp?.adblock?.trafficStats || {};
   const savedBytes = tStats.savedBytes || 0;
   const totalAdElements = (tStats.blockedRequests || 0) + (tStats.blockedDom || 0);
+  const blockedTotal = Math.max(resp?.stats?.blocked || 0, totalAdElements);
+
+  if (resp && resp.stats) {
+    $('#statBlocked').textContent = blockedTotal;
+    $('#statThreats').textContent = resp.stats.threatsToday || 0;
+  }
+
   const trafficEl = $('#statTrafficSaved');
   const adTotalEl = $('#statAdBlockedTotal');
   if (trafficEl) trafficEl.textContent = formatMB(savedBytes);

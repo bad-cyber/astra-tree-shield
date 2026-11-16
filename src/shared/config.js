@@ -1,4 +1,4 @@
-// config.js — Astra · Древо Щит · v0.3.0
+// config.js — Astra · Древо Щит · v0.6.3
 export const DEFAULTS = {
   enabled: true,
   theme: "auto",
@@ -8,11 +8,11 @@ export const DEFAULTS = {
     miners: true,
     downloads: true,
     clickjacking: true,
-    blockDownloads: false, // new: реально блокировать .exe/.js/.msi и т.п.
+    blockDownloads: false,
   },
   loadMonitor: {
     enabled: true,
-    warnMB: 5, // порог "жёлтого" индикатора
+    warnMB: 5,
   },
   whitelist: [],
   stats: { blocked: 0, threatsToday: 0, lastReset: 0 },
@@ -70,15 +70,18 @@ export const WHITELIST_DOMAINS = [
   "kinopoisk.ru", "rutube.ru", "dzen.ru", "ria.ru", "rt.ru",
   "mos.ru", "nalog.gov.ru", "nalog.ru", "gov.ru"
 ];
-
 const BRANDS = [
   "gosuslugi", "sberbank", "sber", "vtb", "alfabank", "alfa",
   "tbank", "tinkoff", "tcsbank", "gazprombank", "psbank", "rshb", "mkb",
   "yandex", "mail", "vk", "ok", "wildberries", "ozon", "avito",
-  "kinopoisk", "rutube", "dzen", "mos", "nalog"
+  "kinopoisk", "rutube", "dzen", "mos", "nalog", "paypal", "appleid", "metamask"
 ];
 
-// Визуально похожие буквы (Кириллица → Латиница)
+const FREE_HOSTING_SUFFIXES = [
+  "pages.dev", "vercel.app", "netlify.app", "github.io",
+  "workers.dev", "weebly.com", "weeblysite.com", "blogspot.com", "typedream.app"
+];
+
 const HOMOGLYPHS = {
   'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x',
   'А': 'A', 'Е': 'E', 'О': 'O', 'Р': 'P', 'С': 'C', 'У': 'Y', 'Х': 'X',
@@ -93,7 +96,7 @@ export function levenshtein(a, b) {
   if (!a.length) return b.length;
   if (!b.length) return a.length;
   const dp = Array.from({ length: b.length + 1 }, (_, i) => [i]);
-  for (let j = 0; j <= a.length; j++) dp[0][j] = j;
+  for (let j = 0; j <= a.length; j++) dp.at(0)[j] = j;
   for (let i = 1; i <= b.length; i++)
     for (let j = 1; j <= a.length; j++)
       dp[i][j] = b[i - 1] === a[j - 1]
@@ -102,19 +105,31 @@ export function levenshtein(a, b) {
   return dp[b.length][a.length];
 }
 
-export function checkBrandSimilarity(hostname) {
-  const h = hostname.toLowerCase();
+export function isTestPhishingUrl(rawUrl) {
+  if (!rawUrl) return false;
+  try {
+    const u = new URL(rawUrl);
+    const h = u.hostname.toLowerCase();
+    const p = u.pathname.toLowerCase();
+    if (h === "://appspot.com" && (
+      p.includes("phishing") || p.includes("malware") || p.includes("unwanted") || p.includes("low_rep") || p.includes("suspicious")
+    )) {
+      return true;
+    }
+  } catch {}
+  return false;
+}
 
-  // 1. Белый список официальных ресурсов — не трогаем
+export function checkBrandSimilarity(hostname) {
+  const h = (hostname || "").toLowerCase().replace(/^www\./, "");
+  if (!h) return { matched: false };
+
   if (isHostInList(h, WHITELIST_DOMAINS)) {
     return { matched: false };
   }
 
-  // 2. Гомоглиф-атака
   const normalizedHost = normalizeHomoglyphs(h);
-  const isMixedAlphabet = normalizedHost !== h;
-
-  if (isMixedAlphabet) {
+  if (normalizedHost !== h) {
     for (const brand of BRANDS) {
       if (normalizedHost.includes(brand)) {
         return { matched: true, exact: false, target: brand, reason: "Подмена букв (Homoglyph-атака)" };
@@ -123,15 +138,23 @@ export function checkBrandSimilarity(hostname) {
   }
 
   const parts = h.split('.');
-  let core = parts.length >= 2 ? parts[parts.length - 2] : h;
+  const core = parts.length >= 2 ? parts[parts.length - 2] : h;
+  const subdomainPart = parts.length > 2 ? parts.slice(0, -2).join('.') : "";
+  const isFreeHost = FREE_HOSTING_SUFFIXES.some((s) => h.endsWith("." + s));
 
   for (const brand of BRANDS) {
     if (core === brand) return { matched: true, exact: true, target: brand };
     if (core.includes(brand) && core !== brand) {
-      return { matched: true, exact: false, target: brand, reason: "Содержит название бренда" };
+      return { matched: true, exact: false, target: brand, reason: `Домен имитирует бренд «${brand}»` };
+    }
+    if (subdomainPart && subdomainPart.includes(brand)) {
+      const reason = isFreeHost
+        ? `Фишинг-поддомен «${brand}» на публичном хостинге`
+        : `Поддомен имитирует бренд «${brand}»`;
+      return { matched: true, exact: false, target: brand, reason };
     }
     if (core.length > 4 && brand.length > 4 && levenshtein(core, brand) <= 1) {
-      return { matched: true, exact: false, target: brand, reason: "Опечатка в названии бренда" };
+      return { matched: true, exact: false, target: brand, reason: `Опечатка в названии бренда «${brand}»` };
     }
   }
   return { matched: false };
