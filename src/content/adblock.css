@@ -1,0 +1,188 @@
+/* ============================================================
+   Astra · Древо Щит — косметические фильтры (v0.6.0-dev)
+   Порядок: общие маркеры → Яндекс/РСЯ/AdFox → Mail.ru/Дзен →
+            VK/myTarget → Тизерные сети → Sticky/Outstream → прочее
+   ============================================================ */
+
+/* ---------- 1. Общие маркеры рекламы и ОРД (erid) ---------- */
+[data-erid],
+[data-ad],
+[data-ad-click],
+[data-ad-slot],
+[data-ad_id],
+[data-adv],
+[data-adv-id],
+[data-banner],
+[data-banner-id],
+[data-rtb],
+[data-teaser],
+[data-testid="ad"],
+[data-testid*="advert"],
+[data-testid*="promo"],
+[aria-label*="реклама" i],
+[aria-label*="advertis" i],
+a[href*="erid="],
+a[href*="/erid/"],
+a[href*="utm_source=ad"],
+a[href*="utm_medium=cpc"],
+a[href*="utm_campaign=promo"] {
+    display: none !important;
+}
+
+/* ---------- 2. Яндекс · РСЯ · AdFox · Дзен ---------- */
+[data-testid="advert"],
+.advert,
+[id^="yandex_rtb"],
+[id*="yandex_rtb"],
+[class*="yandex-rtb"],
+[id^="adfox"],
+[id^="AdFox"],
+[class*="adfox"],
+[class*="serp-adv"],
+[class*="AdvProductGallery"],
+[class*="AdsBlock"],
+[class*="ad-banner"],
+[class^="direct-"],
+[class*=" direct-"],
+[class*="yandex-direct"],
+#direct,
+.yandex-ads,
+[data-bem*="adv"],
+[data-bem*="yandex_rtb"],
+[data-zen-ad],
+[class*="zen-ad"] {
+    display: none !important;
+}
+
+/* ---------- 3. Mail.ru · Морда · Дзен · VK AdTech ---------- */
+[class*="mailru-morda-desktop--advert"],
+[class*="mailru-morda-desktop--banner"],
+[class*="mailru-morda-desktop--native"],
+[class*="mailru-morda-desktop--promo"],
+[class*="mailru-morda-desktop--adv"],
+[class*="morda-desktop--native"],
+[class*="morda-desktop__advert"],
+[class*="morda-desktop__banner"],
+[class*="morda-desktop__promo"],
+[class*="feed-mailru"][class*="ad"],
+[class*="feed-mailru"][class*="promo"],
+[class*="feed-mailru__ad"],
+[class*="native-ad"],
+[class*="nativeAd"],
+[class*="tgb-wrapper"],
+.tgb-wrapper_trap {
+    display: none !important;
+}
+/* Левая колонка Mail.ru: любой сосед .widget_container без классов widget_container / odmnkeo */
+div:has(> [class*="widget_container"]) > div:not([class*="widget_container"]):not([class*="odmnkeo"]):not(:has([class*="widget_container"])) {
+    display: none !important;
+}
+
+/* Вложенные баннеры/промо внутри морды — прячем независимо от карточки */
+[class*="mailru-morda-desktop"] [class*="__banner"],
+[class*="mailru-morda-desktop"] [class*="__advert"],
+[class*="mailru-morda-desktop"] [class*="__promo"],
+[class*="mailru-morda-desktop"] [class*="__adv-"],
+[class*="mailru-morda-desktop"] [data-ad],
+[class*="mailru-morda-desktop"] [data-ad_id],
+[class*="mailru-morda-desktop"] [data-adv],
+[class*="mailru-morda-desktop"] [data-erid],
+[class*="mailru-morda-desktop"] [aria-label*="реклама" i],
+[class*="mailru-morda-desktop"] [aria-label*="промо" i] {
+    display: none !important;
+}
+
+/* Структурные слоты обфусцированной рекламы VK AdTech на морде Mail.ru */
+[class*="grid__lcol"] > div:not([class*="widget_container"]):not([class*="odmnkeo"]),
+[class*="widget_container"] ~ div:not([class*="widget_container"]):has([data-mnemo]),
+[class*="widget_container"] ~ div:not([class*="widget_container"]):has(canvas) {
+    display: none !important;
+}
+
+/* Карточка-статья морды, ВНУТРИ которой есть рекламный маркер */
+[class*="mailru-morda-desktop--card-article"]:has(a[href*="erid"]),
+[class*="mailru-morda-desktop--card-article"]:has([class*="erid"]),
+[class*="mailru-morda-desktop--card-article"]:has([data-erid]),
+[class*="mailru-morda-desktop--card-article"]:has([data-ad]),
+[class*="mailru-morda-desktop--card-article"]:has([data-ad_id]),
+[class*="mailru-morda-desktop--card-article"]:has([data-adv]),
+[class*="mailru-morda-desktop--card-article"]:has([class*="__banner"]),
+[class*="mailru-morda-desktop--card-article"]:has([class*="__advert"]),
+[class*="mailru-morda-desktop--card-article"]:has([class*="__promo"]),
+[class*="mailru-morda-desktop--card-article"]:has([aria-label*="реклама" i]),
+[class*="morda-desktop--card"]:has([data-erid]),
+[class*="morda-desktop--card"]:has([data-ad]) {
+    display: none !important;
+}
+
+/* Дзен-промо внутри морды: ссылки dzen.ru/a/ с рекламным erid или utm-метками */
+[class*="mailru-morda-desktop"] a[href*="dzen.ru/a/"][href*="erid"],
+[class*="mailru-morda-desktop"] a[href*="dzen.ru/a/"][href*="utm_source"],
+[class*="mailru-morda-desktop"] a[href*="dzen.ru/a/"][href*="advert"] {
+    display: none !important;
+}
+
+/* ---------- 4. VK · myTarget · Target@Mail.Ru ---------- */
+[class*="vk-ads"],
+[class*="ads_ads"],
+[class*="ads_ads_"],
+[data-testid="ads"],
+[class*="ads-banner"],
+[class*="ads-promo"],
+[class*="promo-banner"],
+[class*="promoted"],
+[id^="trg_"],
+[data-trg],
+[class*="mytarget"],
+[class*="rb-banner"],
+[class*="rb_body"] {
+    display: none !important;
+}
+
+/* ---------- 5. Тизерные и нативные сети (SMI2, MGID, Lentainform, DirectAdvert) ---------- */
+[id^="M"][id*="ScriptRoot"],
+[id*="MarketGid"],
+[id*="MGID"],
+[id^="smi2"],
+[class*="smi2"],
+[id*="lentainform"],
+[class*="lentainform"],
+[class*="directadvert"],
+[class*="teaser-block"],
+[class*="teaser_block"],
+[class*="teasers-widget"],
+[class*="feed-ad"] {
+    display: none !important;
+}
+
+/* ---------- 6. Видео-оверлеи, Outstream и Sticky-баннеры ---------- */
+[id*="nativeroll"],
+[class*="nativeroll"],
+[id*="videonow"],
+[class*="videonow"],
+[class*="seedr-"],
+[class*="outstream-ad"],
+[class*="sticky-ad"],
+[class*="floating-banner"] {
+    display: none !important;
+}
+
+/* ---------- 7. Прочее ---------- */
+[class*="advert"],
+[class*="advertisement"],
+[class*="adsbygoogle"],
+[class*="google-ads"],
+[class*="sponsored"] {
+    display: none !important;
+}
+
+/* Баннерные изображения по характерным путям и стандартным размерам */
+img[src*="/banner/"],
+img[src*="/banners/"],
+img[src*="advmaker"],
+img[src*="468x60"],
+img[src*="728x90"],
+img[src*="300x250"],
+img[src*="160x600"] {
+    display: none !important;
+}

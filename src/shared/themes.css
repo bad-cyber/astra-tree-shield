@@ -1,0 +1,82 @@
+:root {
+  /* Светлая тема (по умолчанию) */
+  --bg: #ffffff;
+  --bg-soft: #f4f6f8;
+  --text: #1a2536;           /* Темно-синий из логотипа */
+  --text-soft: #5b6a7d;
+  --border: #e1e5ea;
+  --accent: #1a2536;         /* Основной брендовый цвет */
+  --accent-hover: #2a3d56;
+  --danger: #d32f2f;
+  --warn: #c9b07b;           /* Золотой из логотипа */
+  --ok: #2e7d32;
+  --shadow: 0 2px 8px rgba(26, 37, 54, .08);
+}
+
+[data-theme="dark"] {
+  --bg: #121923;
+  --bg-soft: #1a2536;        /* Темно-синий */
+  --text: #e1e5ea;
+  --text-soft: #8b9bb4;
+  --border: #2a3d56;
+  --accent: #c9b07b;         /* Золотой для акцентов в темноте */
+  --accent-hover: #dfc794;
+  --danger: #ef5350;
+  --warn: #dfc794;
+  --ok: #4caf50;
+  --shadow: 0 2px 8px rgba(0,0,0,.4);
+}
+
+[data-theme="night-shield"] {
+  /* Ночной щит (глубокий синий + золото) */
+  --bg: #0a0f16;
+  --bg-soft: #121923;
+  --text: #c9b07b;
+  --text-soft: #8b9bb4;
+  --border: #1a2536;
+  --accent: #c9b07b;
+  --accent-hover: #dfc794;
+  --danger: #ff6b4a;
+  --warn: #ffa726;
+  --ok: #81c784;
+  --shadow: 0 2px 8px rgba(201, 176, 123, .15);
+}
+
+[data-theme="high-contrast"] {
+  --bg: #000000;
+  --bg-soft: #111111;
+  --text: #ffffff;
+  --text-soft: #cccccc;
+  --border: #ffffff;
+  --accent: #ffff00;
+  --accent-hover: #ffff66;
+  --danger: #ff3333;
+  --warn: #ff9900;
+  --ok: #00ff66;
+  --shadow: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="auto"] {
+    --bg: #121923; 
+    --bg-soft: #1a2536; 
+    --text: #e1e5ea; 
+    --text-soft: #8b9bb4;
+    --border: #2a3d56; 
+    --accent: #c9b07b; 
+    --accent-hover: #dfc794;
+    --danger: #ef5350; 
+    --warn: #dfc794; 
+    --ok: #4caf50;
+    --shadow: 0 2px 8px rgba(0,0,0,.4);
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  transition: background .2s, color .2s;
+}

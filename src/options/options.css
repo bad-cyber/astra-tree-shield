@@ -1,0 +1,67 @@
+/* [Astra] src/options/options.css — 0.2.1-qr-support */
+.layout { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+.side { padding: 24px 16px; border-right: 1px solid var(--border); background: var(--bg-soft); position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; }
+.brand { display: flex; align-items: center; gap: 12px; margin-bottom: 30px; padding-left: 8px; }
+.brand-name { font-weight: 700; font-size: 16px; }
+.brand-sub { font-size: 11px; color: var(--text-soft); }
+.side nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.side nav a { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; text-decoration: none; color: var(--text); font-size: 14px; font-weight: 500; transition: background 0.2s, color 0.2s; }
+.side nav a:hover { background: var(--bg); }
+.side nav a.active { background: var(--accent); color: #fff; }
+[data-theme="dark"] .side nav a.active, [data-theme="night-shield"] .side nav a.active { color: #1a2536; }
+.nav-icon { font-size: 16px; }
+
+.content { padding: 40px 50px; max-width: 800px; }
+.content section { display: none; animation: fadeIn 0.3s ease; }
+.content section:first-of-type { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+.content h1 { font-size: 24px; margin: 0 0 8px; font-weight: 600; }
+.section-desc { font-size: 14px; color: var(--text-soft); margin-bottom: 24px; }
+
+.card { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 24px; }
+.setting-row { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+.setting-row:last-child { border-bottom: none; }
+.setting-info { max-width: 80%; }
+.setting-info label { font-size: 15px; font-weight: 600; display: block; margin-bottom: 4px; }
+.setting-info p { font-size: 13px; color: var(--text-soft); margin: 0; line-height: 1.4; }
+
+.switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--border); transition: .3s; border-radius: 24px; }
+.slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+input:checked + .slider { background-color: var(--accent); }
+input:checked + .slider:before { transform: translateX(20px); }
+
+.dropdown { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 14px; outline: none; cursor: pointer; transition: 0.2s; }
+.dropdown:focus { border-color: var(--accent); }
+
+.stats-card { display: flex; justify-content: space-between; padding: 20px; background: var(--bg-soft); }
+.stat-item { text-align: center; flex: 1; border-right: 1px solid var(--border); }
+.stat-item:last-child { border-right: none; }
+.stat-label { font-size: 12px; color: var(--text-soft); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.stat-value { font-size: 24px; font-weight: 700; color: var(--accent); }
+
+.actions-row { margin-bottom: 24px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn { padding: 10px 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); cursor: pointer; font-size: 14px; font-weight: 600; transition: 0.2s; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+[data-theme="dark"] .btn.primary, [data-theme="night-shield"] .btn.primary { color: #1a2536; }
+.btn.primary:hover { opacity: 0.9; }
+.btn.danger { color: var(--danger); border-color: var(--danger); }
+.btn.danger:hover { background: var(--danger); color: #fff; }
+
+.content section.active-section { display: block; }
+
+/* QR-КОД В НАСТРОЙКАХ */
+.qr-card { padding: 30px; }
+.qr-container { display: flex; align-items: center; gap: 30px; }
+.qr-image {
+  width: 200px; height: 200px;
+  border-radius: 12px; border: 4px solid var(--accent);
+  background: #fff; padding: 10px;
+  object-fit: contain;
+}
+.qr-info h3 { margin: 0 0 10px 0; font-size: 20px; color: var(--text); }
+.qr-info p { margin: 0 0 15px 0; font-size: 14px; color: var(--text-soft); line-height: 1.5; }
+.qr-heart { font-weight: bold; color: var(--danger); font-size: 14px; }

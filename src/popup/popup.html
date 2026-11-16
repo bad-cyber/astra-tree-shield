@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="auto">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="../shared/themes.css">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="popup-head">
+    <div class="brand">
+      <img src="../../icons/logo.svg" alt="" width="28" height="28">
+      <div>
+        <div class="brand-name">Astra</div>
+        <div class="brand-sub">Древо Щит</div>
+      </div>
+    </div>
+    <button id="openOptions" class="icon-btn" title="Настройки">⚙</button>
+  </header>
+
+  <section class="status" id="statusBox">
+    <div class="status-icon" id="statusIcon">🛡</div>
+    <div class="status-text">
+      <div class="status-title" id="statusTitle">Проверка...</div>
+      <div class="status-host" id="statusHost">&mdash;</div>
+    </div>
+  </section>
+
+  <div style="padding: 0 12px; display: flex; flex-direction: column; gap: 8px;">
+    <button id="toggleBlockBtn" class="block-site-btn">Загрузка...</button>
+    <button id="toggleWhitelistBtn" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer; font-weight: bold; font-size: 13px; transition: 0.2s;">Загрузка...</button>
+    <button id="pickAdBtn" class="pick-ad-btn" title="Наведите на рекламу и кликните — Astra запомнит её">🎯 Зафиксировать рекламу</button>
+  </div>
+
+  <section class="analysis-section" id="analysisSection">
+    <div class="analysis-header">
+      <span>📊 Анализ рекламы</span>
+      <button id="refreshAnalysisBtn" class="icon-btn" style="width:24px; height:24px; font-size:12px;">↻</button>
+    </div>
+    <div class="analysis-tabs">
+      <button class="tab-btn active" data-tab="requests">Запросы (<span id="reqCount">0</span>)</button>
+      <button class="tab-btn" data-tab="dom">Блоки (<span id="domCount">0</span>)</button>
+    </div>
+    <div class="analysis-content" id="analysisContent">
+      <ul class="analysis-list" id="reqList"><li class="empty">Загрузка...</li></ul>
+      <ul class="analysis-list" id="domList" style="display:none;"><li class="empty">Загрузка...</li></ul>
+    </div>
+  </section>
+
+  <section class="load-monitor" id="loadMonitor" style="display:none;">
+    <div class="load-head">
+      <span class="load-title">📊 Загрузка страницы</span>
+      <span class="load-total" id="loadTotal">—</span>
+    </div>
+    <div class="load-bar">
+      <div class="load-fill" id="loadFill" style="width: 0%"></div>
+    </div>
+    <div class="load-breakdown" id="loadBreakdown"></div>
+    <details class="load-details" id="loadDetails">
+      <summary>Топ URL по весу</summary>
+      <ol class="load-top" id="loadTop"></ol>
+    </details>
+  </section>
+
+  <section class="toggles" id="toggles" style="margin-top: 12px;">
+    <label class="switch-row"><span>🛡 Антифишинг</span><input type="checkbox" data-mod="phishing"></label>
+    <label class="switch-row"><span>🚫 Реклама и трекеры</span><input type="checkbox" data-mod="ads"></label>
+    <label class="switch-row"><span>⛏ Защита от майнеров</span><input type="checkbox" data-mod="miners"></label>
+    <label class="switch-row"><span>🖱 Кликджекинг</span><input type="checkbox" data-mod="clickjacking"></label>
+  </section>
+
+  <footer class="popup-foot">
+    <div class="stats">
+      <span>Заблокировано: <b id="statBlocked">0</b></span>
+      <span>Угроз сегодня: <b id="statThreats">0</b></span>
+    </div>
+    <div class="traffic-saved-bar" title="Накопительная экономия трафика за счёт блокировки рекламы и трекеров">
+      <span>🍃 Сэкономлено трафика:</span>
+      <span><b id="statTrafficSaved">0 КБ</b> (<span id="statAdBlockedTotal">0</span> эл.)</span>
+    </div>
+    <button id="openDonateBtn" class="donate-btn">💚 Поддержать проект</button>
+  </footer>
+
+  <div id="qrModal" class="modal-overlay">
+    <div class="modal-content">
+      <button id="closeModalBtn" class="close-btn">&times;</button>
+      <h3 style="margin-top:0; color: var(--text);">Поддержать Astra</h3>
+      <p style="font-size: 12px; color: var(--text-soft); margin-bottom: 15px;">Отсканируйте в приложении СберБанк Онлайн</p>
+      
+      <img src="../../icons/sber-qr.jpg" alt="QR Сбербанк" id="sberQrImg" class="modal-qr">
+      
+      <div id="sberQrFallback" style="display:none; flex-direction:column; align-items:center; justify-content:center; width: 180px; height: 180px; border: 2px dashed var(--border); border-radius: 12px; margin: 0 auto; color: var(--text-soft); font-size: 12px; text-align: center; padding: 10px;">
+        <span>QR-код не найден.</span>
+      </div>
+      <div style="font-size: 11px; margin-top: 10px; color: var(--danger); font-weight: bold;">Спасибо за поддержку! ❤️</div>
+    </div>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

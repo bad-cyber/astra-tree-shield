@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="auto">
+<head>
+  <meta charset="UTF-8">
+  <title>Astra — Настройки</title>
+  <link rel="stylesheet" href="../shared/themes.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="side">
+      <div class="brand">
+        <img src="../../icons/logo.svg" alt="" width="32" height="32">
+        <div>
+          <div class="brand-name">Astra</div>
+          <div class="brand-sub">Древо Щит <span id="versionDisplay">v0.6.1</span></div>
+        </div>
+      </div>
+
+      <nav>
+        <a href="#general" class="active"><span class="nav-icon">⚙️</span> Основные</a>
+        <a href="#filters"><span class="nav-icon">🛡️</span> Фильтры и Модули</a>
+        <a href="#reputation"><span class="nav-icon">🔍</span> Базы и Репутация</a>
+        <a href="#rules"><span class="nav-icon">📝</span> Пользовательские правила</a>
+        <a href="#about"><span class="nav-icon">ℹ️</span> О программе</a>
+        <a href="#donate"><span class="nav-icon">❤️</span> Поддержать</a>
+      </nav>
+    </aside>
+
+    <main class="content">
+
+      <section id="general">
+        <h1>Основные параметры</h1>
+        <p class="section-desc">Главные настройки работы расширения.</p>
+        <div class="card">
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>Включить защиту Astra</label>
+              <p>Глобальное включение или выключение всех модулей защиты.</p>
+            </div>
+            <label class="switch"><input type="checkbox" id="enabled"><span class="slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>Тема оформления</label>
+              <p>Выберите, как будет выглядеть Astra.</p>
+            </div>
+            <select id="theme" class="dropdown">
+              <option value="auto">Системная</option>
+              <option value="light">Светлая</option>
+              <option value="dark">Тёмная</option>
+              <option value="night-shield">Ночной щит</option>
+              <option value="high-contrast">Высокий контраст</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>Мониторинг нагрузки страницы</label>
+              <p>Показывать в попапе вес страницы, разбивку по типам и топ URL.</p>
+            </div>
+            <label class="switch"><input type="checkbox" id="loadMonitorEnabled"><span class="slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>Порог предупреждения (МБ)</label>
+              <p>Если страница тяжелее — индикатор в попапе станет жёлтым/красным.</p>
+            </div>
+            <input type="number" id="loadMonitorWarnMB" min="1" max="50" class="dropdown" style="width: 90px;">
+          </div>
+        </div>
+      </section>
+      <section id="filters">
+        <h1>Фильтры и Модули защиты</h1>
+        <p class="section-desc">Настройте, от чего именно должна защищать Astra.</p>
+        <div class="card">
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>Антифишинг и защита от подмены</label>
+              <p>Блокировка гомоглифов, опечаток в брендах, RDAP, базы фишинга.</p>
+            </div>
+            <label class="switch"><input type="checkbox" data-mod="phishing"><span class="slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>Блокировка рекламы и трекеров</label>
+              <p>Использование баз RuAdList для очистки страниц.</p>
+            </div>
+            <label class="switch"><input type="checkbox" data-mod="ads"><span class="slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>Защита от майнеров</label>
+              <p>Перехват WebAssembly и Worker-скриптов с известных майнер-доменов.</p>
+            </div>
+            <label class="switch"><input type="checkbox" data-mod="miners"><span class="slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>Детект кликджекинга</label>
+              <p>Поиск невидимых слоёв и скрытых iframe поверх кнопок.</p>
+            </div>
+            <label class="switch"><input type="checkbox" data-mod="clickjacking"><span class="slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>Проверка загрузок</label>
+              <p>Предупреждение при скачивании .exe, .js, .vbs и других опасных файлов.</p>
+            </div>
+            <label class="switch"><input type="checkbox" data-mod="downloads"><span class="slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>🚫 Блокировать опасные загрузки</label>
+              <p>Не только предупреждать, но и сразу отменять загрузку (требует модуль «Проверка загрузок»).</p>
+            </div>
+            <label class="switch"><input type="checkbox" data-mod="blockDownloads"><span class="slider"></span></label>
+          </div>
+        </div>
+      </section>
+
+      <section id="reputation">
+        <h1>Базы и Репутация</h1>
+        <p class="section-desc">Статус обновления баз, открытых источников фишинга и накопительная экономия трафика.</p>
+        <div class="card stats-card">
+          <div class="stat-item">
+            <div class="stat-label">Правил блокировки</div>
+            <div class="stat-value" id="adblockCount">0</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Доменов в базе фишинга</div>
+            <div class="stat-value" id="threatFeedCount">0</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Обновлено</div>
+            <div class="stat-value" id="adblockDate" style="font-size: 13px; font-weight: normal;">Никогда</div>
+          </div>
+        </div>
+        <div class="actions-row" style="margin-bottom: 20px;">
+          <button id="updateDbBtn" class="btn primary">Обновить базы сейчас</button>
+        </div>
+
+        <div class="card stats-card">
+          <div class="stat-item">
+            <div class="stat-label">Сэкономлено трафика</div>
+            <div class="stat-value" id="trafficSavedValue">0 КБ</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Остановлено запросов</div>
+            <div class="stat-value" id="trafficBlockedReqs">0</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Скрыто рекламных блоков</div>
+            <div class="stat-value" id="trafficBlockedDom">0</div>
+          </div>
+        </div>
+        <div class="actions-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <span id="trafficSinceText" style="font-size:12px;color:var(--text-soft);">Учёт ведётся с момента установки v0.6.1</span>
+          <button id="resetTrafficBtn" class="btn" style="padding:6px 12px;font-size:12px;">Сбросить счётчик</button>
+        </div>
+      </section>
+      <section id="rules">
+        <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px;">
+          <div>
+            <h1 style="margin-bottom:4px;">Пользовательские правила</h1>
+            <p class="section-desc" style="margin-bottom:0;">Исключения и ручные блокировки рекламы, добавленные через пипетку, попап или вручную.</p>
+          </div>
+          <div style="display:flex;gap:8px;flex-shrink:0;">
+            <button id="exportRulesBtn" class="btn" style="padding:7px 12px;font-size:12px;">Экспорт правил (JSON)</button>
+            <button id="importRulesBtn" class="btn" style="padding:7px 12px;font-size:12px;">Импорт правил</button>
+            <input type="file" id="importRulesFile" accept="application/json" hidden>
+          </div>
+        </div>
+
+        <div class="card" style="padding: 20px; margin-bottom: 16px;">
+          <div class="setting-info" style="margin-bottom: 12px;">
+            <label>Добавить правило вручную</label>
+            <p>Заблокируйте рекламный CSS-селектор на сайте или добавьте домен в белый / чёрный список.</p>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+            <select id="newRuleType" class="dropdown" style="min-width: 195px;">
+              <option value="ad">CSS-селектор (реклама)</option>
+              <option value="whitelist">Белый список (исключение)</option>
+              <option value="blocklist">Чёрный список (блокировка)</option>
+            </select>
+            <input type="text" id="newRuleHost" class="dropdown" placeholder="Домен (напр. example.com или *)" style="flex: 1; min-width: 170px;">
+            <input type="text" id="newRuleSelector" class="dropdown" placeholder="CSS-селектор (напр. .ad-banner)" style="flex: 1.4; min-width: 200px; font-family: monospace;">
+            <button id="addRuleBtn" class="btn primary" style="padding: 8px 16px;">Добавить</button>
+          </div>
+          <div id="addRuleFeedback" style="font-size: 12px; margin-top: 8px; min-height: 16px;"></div>
+        </div>
+
+        <div class="card" style="padding: 20px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div class="setting-info">
+              <label>Ручные блокировки рекламы (<span id="userAdCount">0</span>)</label>
+              <p>Селекторы и Ad DNA правила, созданные через «Зафиксировать рекламу» или вручную.</p>
+            </div>
+            <button id="clearUserAdsBtn" class="btn danger" style="padding: 6px 12px; font-size: 12px;">Очистить все</button>
+          </div>
+          <ul id="userAdList" style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px;"></ul>
+        </div>
+
+        <div class="card" style="padding: 20px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div class="setting-info">
+              <label>Белый список сайтов (<span id="whitelistCount">0</span>)</label>
+              <p>Сайты, на которых защита Astra отключена.</p>
+            </div>
+          </div>
+          <ul id="whitelistList" style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px;"></ul>
+        </div>
+
+        <div class="card" style="padding: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div class="setting-info">
+              <label>Чёрный список сайтов (<span id="blocklistCount">0</span>)</label>
+              <p>Сайты, заблокированные вами целиком через меню расширения или вручную.</p>
+            </div>
+          </div>
+          <ul id="blocklistList" style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px;"></ul>
+        </div>
+      </section>
+      <section id="about">
+        <h1>О программе</h1>
+        <div class="card" style="padding: 20px;">
+          <p><b>Astra — Древо Щит</b> <span id="versionDisplayAbout">v0.6.1</span></p>
+          <p>Авторы: Емельянов А.Н., Емельянов Н.Ю.</p>
+          <p>Разработано при участии DeepSeek и ИИ-ассистента Google.</p>
+          <p>Лицензия: MIT. Исходный код открыт.</p>
+          <div class="actions" style="margin-top: 20px;">
+            <button id="exportBtn" class="btn">Экспорт настроек и правил (JSON)</button>
+            <button id="importBtn" class="btn">Импорт настроек и правил</button>
+            <input type="file" id="importFile" accept="application/json" hidden>
+            <button id="resetBtn" class="btn danger">Сбросить всё</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="donate">
+        <h1>Поддержать разработку</h1>
+        <p class="section-desc">Проект бесплатный и открытый. Если Astra защищает вас — помогите ей расти.</p>
+
+        <div class="card qr-card">
+          <div class="qr-container">
+            <img src="../../icons/sber-qr.jpg" alt="QR-код Сбербанк" id="sberQrImgOptions" width="200" height="200">
+            <div id="sberQrFallbackOptions" style="display:none; flex-direction:column; align-items:center; justify-content:center; width: 200px; height: 200px; border: 2px dashed var(--border); border-radius: 12px; color: var(--text-soft); font-size: 13px; text-align: center; padding: 15px;">
+              <span>QR-код не найден.</span>
+            </div>
+            <div class="qr-info">
+              <h3>Перевод на карту Сбербанк</h3>
+              <p>Откройте приложение СберБанк Онлайн, нажмите «Оплатить по QR» и отсканируйте этот код.</p>
+              <span class="qr-heart">❤️ Спасибо за вашу поддержку!</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

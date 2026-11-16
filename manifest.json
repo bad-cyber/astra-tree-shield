@@ -1,0 +1,69 @@
+{
+  "manifest_version": 3,
+  "name": "Astra — Древо Щит",
+  "short_name": "Astra",
+  "version": "0.6.1",
+  "description": "Бесплатный щит безопасности. Защита от фишинга, майнеров и рекламы.",
+  "author": "Емельянов А.Н., Емельянов Н.Ю. (при участии DeepSeek и ИИ-ассистента Google)",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "64": "icons/icon64.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "Astra — Древо Щит",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "64": "icons/icon64.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "options_ui": {
+    "page": "src/options/options.html",
+    "open_in_tab": true
+  },
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "tabs",
+    "webNavigation",
+    "scripting",
+    "declarativeNetRequest",
+    "declarativeNetRequestFeedback",
+    "notifications",
+    "downloads",
+    "alarms",
+    "webRequest"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/content-script.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "astra_blocklist",
+        "enabled": true,
+        "path": "rules/static-rules.json"
+      }
+    ]
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/logo.svg", "src/content/adblock.css"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
