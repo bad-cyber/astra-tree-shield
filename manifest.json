@@ -4,7 +4,7 @@
   "short_name": "Astra",
   "version": "0.7.2",
   "description": "Бесплатный щит безопасности. Защита от фишинга, майнеров, Pop-Under, WebRTC IP-утечек, трекеров и рекламы с гибкими правилами для каждого сайта.",
-  "author": "Емельянов А.Н., Емельянов Н.Ю. (при участии DeepSeek и ИИ-ассистента Google)",
+  "author": "Alexander Emelyanov, Nikita Emelyanov",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

@@ -1,8 +1,8 @@
-/* options.js — Astra · Древо Щит · v0.7.0
+/* options.js — Astra · Древо Щит · v0.7.2
    Входной модуль страницы настроек (навигация, общие параметры, статистика, бэкап — B45, агрегатор хэшей — B56).
 */
 import { loadConfig, saveConfig, DEFAULTS } from "../shared/config.js";
-import { $, escapeHtml, formatRuleDate, formatBytes } from "./options-utils.js";
+import { $, formatRuleDate, formatBytes } from "./options-utils.js";
 import { initRulesSection, mergeImportedUserRules } from "./options-rules.js";
 
 async function init() {
@@ -45,6 +45,7 @@ async function init() {
 
   activateSection(location.hash);
   window.addEventListener("hashchange", () => activateSection(location.hash));
+
   // --- 2. НАСТРОЙКИ ---
   function syncFormFromConfig(currentCfg) {
     if ($("#enabled")) $("#enabled").checked = !!currentCfg.enabled;
@@ -73,7 +74,6 @@ async function init() {
       await saveConfig({ modules: { [el.dataset.mod]: el.checked } });
     });
   });
-
   const lmEnabled = $("#loadMonitorEnabled");
   const lmWarn = $("#loadMonitorWarnMB");
   if (lmEnabled) {
@@ -134,6 +134,7 @@ async function init() {
       loadDbStats();
     }
   });
+
   // --- 3. СТАТИСТИКА БАЗ И ЭКОНОМИИ ТРАФИКА ---
   async function loadDbStats() {
     const storage = await chrome.storage.local.get([
@@ -162,15 +163,23 @@ async function init() {
     }
 
     if (storage.adblockStatus === "error" && storage.adblockError) {
+      dateEl.replaceChildren();
       if (storage.adblockCount > 0) {
-        dateEl.innerHTML = `${dateStr}<br><span style="color:var(--danger);font-size:11px;" title="${escapeHtml(storage.adblockError)}">Сбой обновления</span>`;
+        dateEl.append(document.createTextNode(dateStr), document.createElement("br"));
+        const span = document.createElement("span");
+        span.style.cssText = "color:var(--danger);font-size:11px;";
+        span.title = String(storage.adblockError);
+        span.textContent = "Сбой обновления";
+        dateEl.appendChild(span);
       } else {
-        dateEl.innerHTML = `<span style="color:var(--danger)">Ошибка: ${escapeHtml(storage.adblockError)}</span>`;
+        const span = document.createElement("span");
+        span.style.color = "var(--danger)";
+        span.textContent = `Ошибка: ${storage.adblockError}`;
+        dateEl.appendChild(span);
       }
     } else {
       dateEl.textContent = dateStr;
     }
-
     const ts = storage.trafficStats || { savedBytes: 0, blockedRequests: 0, blockedDom: 0, since: Date.now() };
     if ($("#trafficSavedValue")) $("#trafficSavedValue").textContent = formatBytes(ts.savedBytes);
     if ($("#trafficBlockedReqs")) $("#trafficBlockedReqs").textContent = (ts.blockedRequests || 0).toLocaleString("ru-RU");

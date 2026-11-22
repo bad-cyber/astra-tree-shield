@@ -1,4 +1,4 @@
-// adblock-engine.js — Astra · Древо Щит · v0.7.0
+// adblock-engine.js — Astra · Древо Щит · v0.7.2
 // Движок @ghostery/adblocker, загрузка списков фильтров (реклама + трекеры) и управление правилами DNR.
 
 import { FiltersEngine } from '../../vendor/adblocker.bundle.js';
@@ -74,36 +74,36 @@ const BASE_ADBLOCK_DOMAINS = [
   'trackersimulator.org', 'eviltracker.net', 'do-not-tracker.org', 'anon-stats.eff.org',
 ];
 const HARDCODED_AD_RULES = [
-  { url: '||yandex.ru/an',                types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||an.yandex.ru^',               types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||yabs.yandex.ru^',             types: ['script', 'xmlhttprequest', 'image'] },
-  { url: '||awaps.yandex.ru^',            types: ['script', 'xmlhttprequest', 'image'] },
-  { url: '||advertising.yandex.ru^',      types: ['script', 'xmlhttprequest', 'image', 'sub_frame'] },
-  { url: '||mc.yandex.ru^',               types: ['script', 'xmlhttprequest', 'image', 'ping'] },
-  { url: '||://yandex.com^',         types: ['script', 'xmlhttprequest', 'image', 'ping'] },
-  { url: '||://vk.com',                 types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||ads.vk.ru^',                  types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||ad.mail.ru^',                 types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||r.mail.ru^',                  types: ['script', 'xmlhttprequest', 'image', 'ping'] },
-  { url: '||top-fwz1.mail.ru^',           types: ['script', 'xmlhttprequest', 'image', 'ping'] },
+  { url: '||yandex.ru/an',                  types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||an.yandex.ru^',                 types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||yabs.yandex.ru^',               types: ['script', 'xmlhttprequest', 'image'] },
+  { url: '||awaps.yandex.ru^',              types: ['script', 'xmlhttprequest', 'image'] },
+  { url: '||advertising.yandex.ru^',        types: ['script', 'xmlhttprequest', 'image', 'sub_frame'] },
+  { url: '||mc.yandex.ru^',                 types: ['script', 'xmlhttprequest', 'image', 'ping'] },
+  { url: '||://yandex.com^',               types: ['script', 'xmlhttprequest', 'image', 'ping'] },
+  { url: '||://vk.com',                   types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||ads.vk.ru^',                    types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||ad.mail.ru^',                   types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||r.mail.ru^',                    types: ['script', 'xmlhttprequest', 'image', 'ping'] },
+  { url: '||top-fwz1.mail.ru^',             types: ['script', 'xmlhttprequest', 'image', 'ping'] },
   { url: '||://googlesyndication.com^', types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||googlesyndication.com^',      types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||googleadservices.com^',       types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||://google.com',       types: ['script', 'sub_frame', 'xmlhttprequest'] },
-  { url: '||google-analytics.com^',       types: ['script', 'xmlhttprequest', 'image', 'ping'] },
-  { url: '||googletagmanager.com^',       types: ['script', 'xmlhttprequest', 'sub_frame'] },
-  { url: '||adfox.ru^',                   types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||adriver.ru^',                 types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||doubleclick.net^',            types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||criteo.com^',                 types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||criteo.net^',                 types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||taboola.com^',                types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||outbrain.com^',               types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||scorecardresearch.com^',      types: ['script', 'xmlhttprequest', 'image', 'ping'] },
-  { url: '||trackersimulator.org^',       types: ['script', 'sub_frame', 'xmlhttprequest', 'image', 'ping', 'stylesheet', 'font', 'media', 'other'] },
-  { url: '||eviltracker.net^',            types: ['script', 'sub_frame', 'xmlhttprequest', 'image', 'ping', 'stylesheet', 'font', 'media', 'other'] },
-  { url: '||do-not-tracker.org^',         types: ['script', 'sub_frame', 'xmlhttprequest', 'image', 'ping', 'stylesheet', 'font', 'media', 'other'] },
-  { url: '||anon-stats.eff.org^',         types: ['script', 'sub_frame', 'xmlhttprequest', 'image', 'ping', 'stylesheet', 'font', 'media', 'other'] },
+  { url: '||googlesyndication.com^',        types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||googleadservices.com^',         types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||://google.com^',         types: ['script', 'sub_frame', 'xmlhttprequest'] },
+  { url: '||google-analytics.com^',         types: ['script', 'xmlhttprequest', 'image', 'ping'] },
+  { url: '||googletagmanager.com^',         types: ['script', 'xmlhttprequest', 'sub_frame'] },
+  { url: '||adfox.ru^',                     types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||adriver.ru^',                   types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||doubleclick.net^',              types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||criteo.com^',                   types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||criteo.net^',                   types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||taboola.com^',                  types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||outbrain.com^',                 types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||scorecardresearch.com^',        types: ['script', 'xmlhttprequest', 'image', 'ping'] },
+  { url: '||trackersimulator.org^',         types: ['script', 'sub_frame', 'xmlhttprequest', 'image', 'ping', 'stylesheet', 'font', 'media', 'other'] },
+  { url: '||eviltracker.net^',              types: ['script', 'sub_frame', 'xmlhttprequest', 'image', 'ping', 'stylesheet', 'font', 'media', 'other'] },
+  { url: '||do-not-tracker.org^',           types: ['script', 'sub_frame', 'xmlhttprequest', 'image', 'ping', 'stylesheet', 'font', 'media', 'other'] },
+  { url: '||anon-stats.eff.org^',           types: ['script', 'sub_frame', 'xmlhttprequest', 'image', 'ping', 'stylesheet', 'font', 'media', 'other'] },
 ];
 
 const URL_PATTERN_RULES = [
@@ -146,7 +146,7 @@ function base64ToUint8(base64) {
   }
   return bytes;
 }
-async function fetchFromMirrorGroup(mirrors, userAgent = 'Astra-Browser-Extension/0.7.0') {
+async function fetchFromMirrorGroup(mirrors, userAgent = 'Astra-Browser-Extension/0.7.2') {
   let lastError = null;
   for (const url of mirrors) {
     try {
@@ -190,7 +190,7 @@ export async function getEngine() {
 
   const texts = [];
   for (const group of FILTER_MIRROR_GROUPS) {
-    const res = await fetchFromMirrorGroup(group.mirrors, 'Astra-Browser-Extension/0.7.0');
+    const res = await fetchFromMirrorGroup(group.mirrors, 'Astra-Browser-Extension/0.7.2');
     if (res.text) texts.push(res.text);
   }
 
@@ -267,7 +267,7 @@ export async function updateAdblockRules() {
 
   for (const group of FILTER_MIRROR_GROUPS) {
     if (domains.size >= MAX_DYNAMIC_DOMAINS) break;
-    const res = await fetchFromMirrorGroup(group.mirrors, 'Astra-Browser-Extension/0.7.0');
+    const res = await fetchFromMirrorGroup(group.mirrors, 'Astra-Browser-Extension/0.7.2');
     if (!res.text) {
       if (res.error) lastError = res.error;
       continue;

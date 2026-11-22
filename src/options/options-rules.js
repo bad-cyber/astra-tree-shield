@@ -4,7 +4,6 @@
 import { DEFAULTS, loadConfig, saveConfig } from "../shared/config.js";
 import {
   $,
-  escapeHtml,
   formatRuleDate,
   normalizeHostInput,
   isValidCssSelector,
@@ -57,6 +56,7 @@ function sanitizeOverridesMap(rawMap) {
   }
   return cleanMap;
 }
+
 export async function mergeImportedUserRules(payload) {
   const cur = await chrome.storage.local.get(["astraUserAdBase", "userWhitelist", "userBlocklist"]);
   const nextAdBase = [...(cur.astraUserAdBase || [])];
@@ -84,7 +84,6 @@ export async function mergeImportedUserRules(payload) {
       }
     }
   }
-
   if (Array.isArray(payload.userWhitelist)) {
     for (const h of payload.userWhitelist) {
       const clean = normalizeHostInput(h);
@@ -133,20 +132,20 @@ export async function mergeImportedUserRules(payload) {
   await notifyTabsBaseUpdated();
   return addedCount;
 }
-function formatOverrideBadges(mods) {
-  if (!mods || typeof mods !== "object") return "";
-  const badges = [];
+
+function appendOverrideBadges(container, mods) {
+  if (!mods || typeof mods !== "object") return;
   for (const [key, val] of Object.entries(mods)) {
     if (typeof val !== "boolean") continue;
     const label = MODULE_LABELS[key] || key;
     const stateText = val ? "Вкл" : "Выкл";
     const bg = val ? "rgba(67, 160, 71, 0.16)" : "rgba(229, 57, 53, 0.16)";
     const color = val ? "var(--ok, #43a047)" : "var(--danger, #e53935)";
-    badges.push(
-      `<span style="display:inline-block;padding:2px 7px;border-radius:6px;font-size:11px;background:${bg};color:${color};margin:2px 4px 0 0;">${escapeHtml(label)}: ${stateText}</span>`
-    );
+    const badge = document.createElement("span");
+    badge.style.cssText = `display:inline-block;padding:2px 7px;border-radius:6px;font-size:11px;background:${bg};color:${color};margin:2px 4px 0 0;`;
+    badge.textContent = `${label}: ${stateText}`;
+    container.appendChild(badge);
   }
-  return badges.join("");
 }
 
 export async function renderUserRules() {
@@ -158,141 +157,186 @@ export async function renderUserRules() {
   const userWhitelist = localData.userWhitelist || [];
   const userBlocklist = localData.userBlocklist || [];
   const siteOverrides = cfg.siteOverrides || {};
-
   // 0. Индивидуальные настройки сайтов (siteOverrides)
   const overridesList = $("#siteOverridesList");
   const overridesCount = $("#siteOverridesCount");
   const overrideHosts = Object.keys(siteOverrides).sort();
   if (overridesCount) overridesCount.textContent = overrideHosts.length;
   if (overridesList) {
-    overridesList.innerHTML = "";
+    overridesList.replaceChildren();
     if (overrideHosts.length === 0) {
-      overridesList.innerHTML = `<li style="color:var(--text-soft);font-size:13px;">Индивидуальных настроек для отдельных сайтов пока нет. Откройте попап Astra на нужном сайте и переключите любой модуль.</li>`;
+      const emptyLi = document.createElement("li");
+      emptyLi.style.cssText = "color:var(--text-soft);font-size:13px;";
+      emptyLi.textContent = "Индивидуальных настроек для отдельных сайтов пока нет. Откройте попап Astra на нужном сайте и переключите любой модуль.";
+      overridesList.appendChild(emptyLi);
     } else {
       overrideHosts.forEach((host) => {
         const li = document.createElement("li");
         li.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);font-size:13px;";
-        li.innerHTML = `
-          <div style="min-width:0;flex:1;">
-            <div style="font-weight:600;color:var(--text);">${escapeHtml(host)}</div>
-            <div style="margin-top:4px;">${formatOverrideBadges(siteOverrides[host])}</div>
-          </div>
-          <button data-del-override="${escapeHtml(host)}" class="btn" style="padding:4px 10px;font-size:12px;flex-shrink:0;">Сбросить</button>
-        `;
-        overridesList.appendChild(li);
-      });
 
-      overridesList.querySelectorAll("button[data-del-override]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          const target = btn.dataset.delOverride;
-          await saveConfig({ siteOverrides: { [target]: null } });
+        const infoDiv = document.createElement("div");
+        infoDiv.style.cssText = "min-width:0;flex:1;";
+
+        const hostDiv = document.createElement("div");
+        hostDiv.style.cssText = "font-weight:600;color:var(--text);";
+        hostDiv.textContent = host;
+
+        const badgesDiv = document.createElement("div");
+        badgesDiv.style.marginTop = "4px";
+        appendOverrideBadges(badgesDiv, siteOverrides[host]);
+
+        infoDiv.append(hostDiv, badgesDiv);
+
+        const resetBtn = document.createElement("button");
+        resetBtn.type = "button";
+        resetBtn.className = "btn";
+        resetBtn.style.cssText = "padding:4px 10px;font-size:12px;flex-shrink:0;";
+        resetBtn.textContent = "Сбросить";
+        resetBtn.addEventListener("click", async () => {
+          await saveConfig({ siteOverrides: { [host]: null } });
           await notifyTabsBaseUpdated();
-          showRuleFeedback(`Индивидуальные настройки для ${target} сброшены.`);
+          showRuleFeedback(`Индивидуальные настройки для ${host} сброшены.`);
           renderUserRules();
         });
+
+        li.append(infoDiv, resetBtn);
+        overridesList.appendChild(li);
       });
     }
   }
+
   // 1. Ручные блокировки рекламы
   const userAdList = $("#userAdList");
   const userAdCount = $("#userAdCount");
   if (userAdCount) userAdCount.textContent = astraUserAdBase.length;
   if (userAdList) {
-    userAdList.innerHTML = "";
+    userAdList.replaceChildren();
     if (astraUserAdBase.length === 0) {
-      userAdList.innerHTML = `<li style="color:var(--text-soft);font-size:13px;">Ручных правил пока нет. Используйте «Зафиксировать рекламу» в меню расширения или форму выше.</li>`;
+      const emptyLi = document.createElement("li");
+      emptyLi.style.cssText = "color:var(--text-soft);font-size:13px;";
+      emptyLi.textContent = "Ручных правил пока нет. Используйте «Зафиксировать рекламу» в меню расширения или форму выше.";
+      userAdList.appendChild(emptyLi);
     } else {
       astraUserAdBase.forEach((rule, idx) => {
         const li = document.createElement("li");
         li.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);font-size:13px;";
 
         if (editingAdIndex === idx) {
-          li.innerHTML = `
-            <div style="display:flex;flex-wrap:wrap;gap:8px;flex:1;min-width:0;">
-              <input type="text" data-edit-sel="${idx}" class="dropdown" value="${escapeHtml(rule.selector)}" style="flex:2;min-width:160px;font-family:monospace;padding:4px 8px;font-size:12px;">
-              <input type="text" data-edit-host="${idx}" class="dropdown" value="${escapeHtml(rule.host)}" placeholder="* или example.com" style="flex:1;min-width:120px;padding:4px 8px;font-size:12px;">
-            </div>
-            <div style="display:flex;gap:6px;flex-shrink:0;">
-              <button data-save-ad="${idx}" class="btn primary" style="padding:4px 10px;font-size:12px;">Сохранить</button>
-              <button data-cancel-ad="${idx}" class="btn" style="padding:4px 10px;font-size:12px;">Отмена</button>
-            </div>
-          `;
+          const inputsWrap = document.createElement("div");
+          inputsWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;flex:1;min-width:0;";
+
+          const selInput = document.createElement("input");
+          selInput.type = "text";
+          selInput.className = "dropdown";
+          selInput.value = rule.selector;
+          selInput.style.cssText = "flex:2;min-width:160px;font-family:monospace;padding:4px 8px;font-size:12px;";
+
+          const hostInput = document.createElement("input");
+          hostInput.type = "text";
+          hostInput.className = "dropdown";
+          hostInput.value = rule.host;
+          hostInput.placeholder = "* или example.com";
+          hostInput.style.cssText = "flex:1;min-width:120px;padding:4px 8px;font-size:12px;";
+
+          inputsWrap.append(selInput, hostInput);
+          const actionsWrap = document.createElement("div");
+          actionsWrap.style.cssText = "display:flex;gap:6px;flex-shrink:0;";
+
+          const saveBtn = document.createElement("button");
+          saveBtn.type = "button";
+          saveBtn.className = "btn primary";
+          saveBtn.style.cssText = "padding:4px 10px;font-size:12px;";
+          saveBtn.textContent = "Сохранить";
+          saveBtn.addEventListener("click", async () => {
+            const nextSel = (selInput.value || "").trim();
+            const rawHost = (hostInput.value || "").trim();
+            const nextHost = rawHost === "" ? "*" : normalizeHostInput(rawHost);
+
+            if (!isValidCssSelector(nextSel)) {
+              showRuleFeedback("Некорректный CSS-селектор при редактировании.", true);
+              return;
+            }
+            if (!nextHost) {
+              showRuleFeedback("Некорректный домен. Укажите домен (example.com) или *.", true);
+              return;
+            }
+
+            const updated = [...astraUserAdBase];
+            updated[idx] = {
+              ...updated[idx],
+              selector: nextSel,
+              host: nextHost,
+              ts: Date.now(),
+              isDNA: nextHost === "*"
+            };
+            editingAdIndex = -1;
+            await chrome.storage.local.set({ astraUserAdBase: updated });
+            await notifyTabsBaseUpdated();
+            showRuleFeedback("Правило обновлено.");
+            renderUserRules();
+          });
+
+          const cancelBtn = document.createElement("button");
+          cancelBtn.type = "button";
+          cancelBtn.className = "btn";
+          cancelBtn.style.cssText = "padding:4px 10px;font-size:12px;";
+          cancelBtn.textContent = "Отмена";
+          cancelBtn.addEventListener("click", () => {
+            editingAdIndex = -1;
+            renderUserRules();
+          });
+
+          actionsWrap.append(saveBtn, cancelBtn);
+          li.append(inputsWrap, actionsWrap);
         } else {
-          const scope = rule.host === "*" ? "Все сайты (DNA)" : escapeHtml(rule.host);
-          const sizeInfo = rule.size ? ` · ${escapeHtml(rule.size)}` : "";
+          const scope = rule.host === "*" ? "Все сайты (DNA)" : rule.host;
+          const sizeInfo = rule.size ? ` · ${rule.size}` : "";
           const dateStr = formatRuleDate(rule.ts);
-          const dateInfo = dateStr ? ` · ${escapeHtml(dateStr)}` : "";
-          li.innerHTML = `
-            <div style="min-width:0;flex:1;">
-              <div style="font-family:monospace;word-break:break-all;color:var(--text);">${escapeHtml(rule.selector)}</div>
-              <div style="font-size:11px;color:var(--text-soft);margin-top:2px;">${scope}${sizeInfo}${dateInfo}</div>
-            </div>
-            <div style="display:flex;gap:6px;flex-shrink:0;">
-              <button data-edit-ad="${idx}" class="btn" style="padding:4px 10px;font-size:12px;">Изменить</button>
-              <button data-del-ad="${idx}" class="btn danger" style="padding:4px 10px;font-size:12px;">Удалить</button>
-            </div>
-          `;
+          const dateInfo = dateStr ? ` · ${dateStr}` : "";
+
+          const infoWrap = document.createElement("div");
+          infoWrap.style.cssText = "min-width:0;flex:1;";
+
+          const selDiv = document.createElement("div");
+          selDiv.style.cssText = "font-family:monospace;word-break:break-all;color:var(--text);";
+          selDiv.textContent = rule.selector;
+
+          const metaDiv = document.createElement("div");
+          metaDiv.style.cssText = "font-size:11px;color:var(--text-soft);margin-top:2px;";
+          metaDiv.textContent = `${scope}${sizeInfo}${dateInfo}`;
+
+          infoWrap.append(selDiv, metaDiv);
+
+          const actionsWrap = document.createElement("div");
+          actionsWrap.style.cssText = "display:flex;gap:6px;flex-shrink:0;";
+
+          const editBtn = document.createElement("button");
+          editBtn.type = "button";
+          editBtn.className = "btn";
+          editBtn.style.cssText = "padding:4px 10px;font-size:12px;";
+          editBtn.textContent = "Изменить";
+          editBtn.addEventListener("click", () => {
+            editingAdIndex = idx;
+            renderUserRules();
+          });
+
+          const delBtn = document.createElement("button");
+          delBtn.type = "button";
+          delBtn.className = "btn danger";
+          delBtn.style.cssText = "padding:4px 10px;font-size:12px;";
+          delBtn.textContent = "Удалить";
+          delBtn.addEventListener("click", async () => {
+            if (editingAdIndex === idx) editingAdIndex = -1;
+            const updated = astraUserAdBase.filter((_, i) => i !== idx);
+            await chrome.storage.local.set({ astraUserAdBase: updated });
+            await notifyTabsBaseUpdated();
+            renderUserRules();
+          });
+
+          actionsWrap.append(editBtn, delBtn);
+          li.append(infoWrap, actionsWrap);
         }
         userAdList.appendChild(li);
-      });
-
-      userAdList.querySelectorAll("button[data-edit-ad]").forEach(btn => {
-        btn.addEventListener("click", () => {
-          editingAdIndex = parseInt(btn.dataset.editAd, 10);
-          renderUserRules();
-        });
-      });
-
-      userAdList.querySelectorAll("button[data-cancel-ad]").forEach(btn => {
-        btn.addEventListener("click", () => {
-          editingAdIndex = -1;
-          renderUserRules();
-        });
-      });
-
-      userAdList.querySelectorAll("button[data-save-ad]").forEach(btn => {
-        btn.addEventListener("click", async () => {
-          const idx = parseInt(btn.dataset.saveAd, 10);
-          const selInput = userAdList.querySelector(`input[data-edit-sel="${idx}"]`);
-          const hostInput = userAdList.querySelector(`input[data-edit-host="${idx}"]`);
-          const nextSel = (selInput?.value || "").trim();
-          const rawHost = (hostInput?.value || "").trim();
-          const nextHost = rawHost === "" ? "*" : normalizeHostInput(rawHost);
-
-          if (!isValidCssSelector(nextSel)) {
-            showRuleFeedback("Некорректный CSS-селектор при редактировании.", true);
-            return;
-          }
-          if (!nextHost) {
-            showRuleFeedback("Некорректный домен. Укажите домен (example.com) или *.", true);
-            return;
-          }
-
-          const updated = [...astraUserAdBase];
-          updated[idx] = {
-            ...updated[idx],
-            selector: nextSel,
-            host: nextHost,
-            ts: Date.now(),
-            isDNA: nextHost === "*"
-          };
-          editingAdIndex = -1;
-          await chrome.storage.local.set({ astraUserAdBase: updated });
-          await notifyTabsBaseUpdated();
-          showRuleFeedback("Правило обновлено.");
-          renderUserRules();
-        });
-      });
-
-      userAdList.querySelectorAll("button[data-del-ad]").forEach(btn => {
-        btn.addEventListener("click", async () => {
-          const idx = parseInt(btn.dataset.delAd, 10);
-          if (editingAdIndex === idx) editingAdIndex = -1;
-          const updated = astraUserAdBase.filter((_, i) => i !== idx);
-          await chrome.storage.local.set({ astraUserAdBase: updated });
-          await notifyTabsBaseUpdated();
-          renderUserRules();
-        });
       });
     }
   }
@@ -301,25 +345,32 @@ export async function renderUserRules() {
   const wlCount = $("#whitelistCount");
   if (wlCount) wlCount.textContent = userWhitelist.length;
   if (wlList) {
-    wlList.innerHTML = "";
+    wlList.replaceChildren();
     if (userWhitelist.length === 0) {
-      wlList.innerHTML = `<li style="color:var(--text-soft);font-size:13px;">Белый список пуст.</li>`;
+      const emptyLi = document.createElement("li");
+      emptyLi.style.cssText = "color:var(--text-soft);font-size:13px;";
+      emptyLi.textContent = "Белый список пуст.";
+      wlList.appendChild(emptyLi);
     } else {
-      userWhitelist.forEach(host => {
+      userWhitelist.forEach((host) => {
         const li = document.createElement("li");
         li.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);font-size:13px;";
-        li.innerHTML = `
-          <span>${escapeHtml(host)}</span>
-          <button data-del-wl="${escapeHtml(host)}" class="btn" style="padding:4px 10px;font-size:12px;">Убрать</button>
-        `;
-        wlList.appendChild(li);
-      });
-      wlList.querySelectorAll("button[data-del-wl]").forEach(btn => {
-        btn.addEventListener("click", async () => {
-          const target = btn.dataset.delWl;
-          await chrome.runtime.sendMessage({ type: "TOGGLE_WHITELIST", host: target }).catch(() => {});
+
+        const hostSpan = document.createElement("span");
+        hostSpan.textContent = host;
+
+        const delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "btn";
+        delBtn.style.cssText = "padding:4px 10px;font-size:12px;";
+        delBtn.textContent = "Убрать";
+        delBtn.addEventListener("click", async () => {
+          await chrome.runtime.sendMessage({ type: "TOGGLE_WHITELIST", host }).catch(() => {});
           renderUserRules();
         });
+
+        li.append(hostSpan, delBtn);
+        wlList.appendChild(li);
       });
     }
   }
@@ -329,26 +380,32 @@ export async function renderUserRules() {
   const blCount = $("#blocklistCount");
   if (blCount) blCount.textContent = userBlocklist.length;
   if (blList) {
-    blList.innerHTML = "";
+    blList.replaceChildren();
     if (userBlocklist.length === 0) {
-      blList.innerHTML = `<li style="color:var(--text-soft);font-size:13px;">Чёрный список пуст.</li>`;
+      const emptyLi = document.createElement("li");
+      emptyLi.style.cssText = "color:var(--text-soft);font-size:13px;";
+      emptyLi.textContent = "Чёрный список пуст.";
+      blList.appendChild(emptyLi);
     } else {
-      userBlocklist.forEach(host => {
+      userBlocklist.forEach((host) => {
         const li = document.createElement("li");
         li.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);font-size:13px;";
-        li.innerHTML = `
-          <span>${escapeHtml(host)}</span>
-          <button data-del-bl="${escapeHtml(host)}" class="btn danger" style="padding:4px 10px;font-size:12px;">Разблокировать</button>
-        `;
-        blList.appendChild(li);
-      });
 
-      blList.querySelectorAll("button[data-del-bl]").forEach(btn => {
-        btn.addEventListener("click", async () => {
-          const target = btn.dataset.delBl;
-          await chrome.runtime.sendMessage({ type: "TOGGLE_BLOCK_SITE", host: target }).catch(() => {});
+        const hostSpan = document.createElement("span");
+        hostSpan.textContent = host;
+
+        const delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "btn danger";
+        delBtn.style.cssText = "padding:4px 10px;font-size:12px;";
+        delBtn.textContent = "Разблокировать";
+        delBtn.addEventListener("click", async () => {
+          await chrome.runtime.sendMessage({ type: "TOGGLE_BLOCK_SITE", host }).catch(() => {});
           renderUserRules();
         });
+
+        li.append(hostSpan, delBtn);
+        blList.appendChild(li);
       });
     }
   }

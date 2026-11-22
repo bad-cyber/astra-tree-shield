@@ -1,6 +1,7 @@
-/* popup.js — Astra · Древо Щит · v0.7.1
-   Обновление v0.7.1:
+/* popup.js — Astra · Древо Щит · v0.7.2
+   Обновление v0.7.2:
    - B57: Per-Site Shields Overrides — индивидуальные переключатели модулей для текущего сайта с индикацией и сбросом.
+   - Полный отказ от innerHTML в пользу безопасного DOM API.
 */
 import {
   loadConfig, saveConfig, resolveEffectiveModules,
@@ -21,10 +22,6 @@ function formatMB(bytes) {
   if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' КБ';
   if (bytes < 1073741824) return (bytes / 1048576).toFixed(2) + ' МБ';
   return (bytes / 1073741824).toFixed(2) + ' ГБ';
-}
-
-function escapeHtml(str) {
-  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function extractCleanSelector(raw) {
@@ -98,14 +95,25 @@ async function renderAnalysis() {
 
   const reqList = $('#reqList');
   if (reqList) {
-    reqList.innerHTML = '';
+    reqList.replaceChildren();
     if (data.requests.length === 0) {
-      reqList.innerHTML = '<li class="empty">Рекламные запросы не найдены</li>';
+      const emptyLi = document.createElement('li');
+      emptyLi.className = 'empty';
+      emptyLi.textContent = 'Рекламные запросы не найдены';
+      reqList.appendChild(emptyLi);
     } else {
-      data.requests.slice(0, 30).forEach(r => {
+      data.requests.slice(0, 30).forEach((r) => {
         const li = document.createElement('li');
-        li.innerHTML = `<div class="url" title="${escapeHtml(r.url)}">${escapeHtml(r.url.slice(0, 60))}${r.url.length > 60 ? '...' : ''}</div>
-                        <div class="filter">${escapeHtml(r.filter)}</div>`;
+        const urlDiv = document.createElement('div');
+        urlDiv.className = 'url';
+        urlDiv.title = r.url;
+        urlDiv.textContent = r.url.slice(0, 60) + (r.url.length > 60 ? '...' : '');
+
+        const filterDiv = document.createElement('div');
+        filterDiv.className = 'filter';
+        filterDiv.textContent = r.filter;
+
+        li.append(urlDiv, filterDiv);
         reqList.appendChild(li);
       });
     }
@@ -113,11 +121,14 @@ async function renderAnalysis() {
 
   const domList = $('#domList');
   if (domList) {
-    domList.innerHTML = '';
+    domList.replaceChildren();
     if (data.domBlocks.length === 0) {
-      domList.innerHTML = '<li class="empty">Рекламные DOM-блоки не найдены</li>';
+      const emptyLi = document.createElement('li');
+      emptyLi.className = 'empty';
+      emptyLi.textContent = 'Рекламные DOM-блоки не найдены';
+      domList.appendChild(emptyLi);
     } else {
-      data.domBlocks.slice(0, 30).forEach(b => {
+      data.domBlocks.slice(0, 30).forEach((b) => {
         const li = document.createElement('li');
         const cleanSelector = extractCleanSelector(b.selector);
         const sizeLabel = (b.rect.width > 0 || b.rect.height > 0)
@@ -128,59 +139,83 @@ async function renderAnalysis() {
           (r) => r.selector === cleanSelector && (r.host === currentHost || r.host === '*')
         );
 
+        const urlDiv = document.createElement('div');
+        urlDiv.className = 'url';
+        urlDiv.title = b.selector;
+        urlDiv.textContent = b.selector;
+        li.appendChild(urlDiv);
+
+        const rawText = (b.text || '').trim();
+        if (rawText) {
+          const previewDiv = document.createElement('div');
+          previewDiv.className = 'block-preview';
+          previewDiv.title = rawText;
+          previewDiv.textContent = `«${rawText.slice(0, 95)}${rawText.length > 95 ? '…' : ''}»`;
+          li.appendChild(previewDiv);
+        }
+
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'block-meta';
+        metaDiv.append(`Размер: ${sizeLabel}`);
+
         const badges = [];
         if (b.links?.length) badges.push(`🔗 ${b.links.length}`);
         if (b.images?.length) badges.push(`🖼️ ${b.images.length}`);
-        if (b.iframes?.length) badges.push(`📦 iframe`);
+        if (b.iframes?.length) badges.push('📦 iframe');
+        if (badges.length) {
+          const badgesSpan = document.createElement('span');
+          badgesSpan.className = 'block-badges';
+          badgesSpan.textContent = badges.join(' · ');
+          metaDiv.appendChild(badgesSpan);
+        }
+        li.appendChild(metaDiv);
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'block-actions';
 
-        const badgesHtml = badges.length
-          ? `<span class="block-badges">${badges.join(' · ')}</span>`
-          : '';
-
-        const rawText = (b.text || '').trim();
-        const previewHtml = rawText
-          ? `<div class="block-preview" title="${escapeHtml(rawText)}">«${escapeHtml(rawText.slice(0, 95))}${rawText.length > 95 ? '…' : ''}»</div>`
-          : '';
-
-        const wlBtnHtml = (currentHost && !isSiteWhitelisted)
-          ? `<button type="button" class="block-act-btn" data-act="wl" title="Добавить ${escapeHtml(currentHost)} в исключения">🤍 Исключить сайт</button>`
-          : '';
-        li.innerHTML = `
-          <div class="url" title="${escapeHtml(b.selector)}">${escapeHtml(b.selector)}</div>
-          ${previewHtml}
-          <div class="block-meta">Размер: ${sizeLabel}${badgesHtml}</div>
-          <div class="block-actions">
-            <button type="button" class="block-act-btn" data-act="copy" title="Скопировать CSS-селектор">📋 Копировать</button>
-            <button type="button" class="block-act-btn ${isSaved ? 'saved' : ''}" data-act="rule" title="Сохранить или убрать из ручных правил">${isSaved ? '✓ В правилах' : '➕ В правила'}</button>
-            ${wlBtnHtml}
-          </div>
-        `;
-        li.querySelector('[data-act="copy"]')?.addEventListener('click', async (e) => {
-          const btn = e.currentTarget;
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'block-act-btn';
+        copyBtn.title = 'Скопировать CSS-селектор';
+        copyBtn.textContent = '📋 Копировать';
+        copyBtn.addEventListener('click', async () => {
           const ok = await copyTextSafe(cleanSelector);
           if (ok) {
-            btn.textContent = '✓ Скопировано';
-            setTimeout(() => { btn.textContent = '📋 Копировать'; }, 1400);
+            copyBtn.textContent = '✓ Скопировано';
+            setTimeout(() => { copyBtn.textContent = '📋 Копировать'; }, 1400);
           }
         });
 
-        li.querySelector('[data-act="rule"]')?.addEventListener('click', async (e) => {
-          const btn = e.currentTarget;
-          btn.disabled = true;
+        const ruleBtn = document.createElement('button');
+        ruleBtn.type = 'button';
+        ruleBtn.className = 'block-act-btn' + (isSaved ? ' saved' : '');
+        ruleBtn.title = 'Сохранить или убрать из ручных правил';
+        ruleBtn.textContent = isSaved ? '✓ В правилах' : '➕ В правила';
+        ruleBtn.addEventListener('click', async () => {
+          ruleBtn.disabled = true;
           const nowSaved = await toggleUserRuleFromPopup(tab.id, currentHost, cleanSelector, sizeLabel);
-          btn.disabled = false;
-          btn.classList.toggle('saved', nowSaved);
-          btn.textContent = nowSaved ? '✓ В правилах' : '➕ В правила';
+          ruleBtn.disabled = false;
+          ruleBtn.classList.toggle('saved', nowSaved);
+          ruleBtn.textContent = nowSaved ? '✓ В правилах' : '➕ В правила';
         });
 
-        li.querySelector('[data-act="wl"]')?.addEventListener('click', async (e) => {
-          const btn = e.currentTarget;
-          btn.disabled = true;
-          btn.textContent = 'Применение...';
-          await safeSend({ type: 'TOGGLE_WHITELIST', host: currentHost });
-          window.location.reload();
-        });
+        actionsDiv.append(copyBtn, ruleBtn);
 
+        if (currentHost && !isSiteWhitelisted) {
+          const wlBtn = document.createElement('button');
+          wlBtn.type = 'button';
+          wlBtn.className = 'block-act-btn';
+          wlBtn.title = `Добавить ${currentHost} в исключения`;
+          wlBtn.textContent = '🤍 Исключить сайт';
+          wlBtn.addEventListener('click', async () => {
+            wlBtn.disabled = true;
+            wlBtn.textContent = 'Применение...';
+            await safeSend({ type: 'TOGGLE_WHITELIST', host: currentHost });
+            window.location.reload();
+          });
+          actionsDiv.appendChild(wlBtn);
+        }
+
+        li.appendChild(actionsDiv);
         domList.appendChild(li);
       });
     }
@@ -253,18 +288,27 @@ function renderMetrics(m, warnMB) {
   const sortedTypes = Object.entries(t).filter(([, v]) => v && v.bytes > 0).sort((a, b) => b[1].bytes - a[1].bytes);
   for (const [k, v] of sortedTypes.slice(0, 4)) parts.push(`${names[k] || k}: ${formatMB(v.bytes)}`);
 
-  let html = parts.join(' · ');
+  bd.replaceChildren();
+  bd.append(document.createTextNode(parts.join(' · ')));
   if (m.adBytes > 0) {
     const adMB = m.adBytes / 1048576;
-    if (adMB >= 0.01) html += `<br>📛 Реклама/трекеры: <b style="color:var(--danger)">${formatMB(m.adBytes)}</b>`;
+    if (adMB >= 0.01) {
+      bd.append(document.createElement('br'), document.createTextNode('📛 Реклама/трекеры: '));
+      const bEl = document.createElement('b');
+      bEl.style.color = 'var(--danger)';
+      bEl.textContent = formatMB(m.adBytes);
+      bd.appendChild(bEl);
+    }
   }
-  bd.innerHTML = html;
 
   const topEl = $('#loadTop');
-  topEl.innerHTML = '';
+  topEl.replaceChildren();
   const top = m.top || [];
   if (top.length === 0) {
-    topEl.innerHTML = '<li style="color:var(--text-soft)">Нет данных о ресурсах</li>';
+    const emptyLi = document.createElement('li');
+    emptyLi.style.color = 'var(--text-soft)';
+    emptyLi.textContent = 'Нет данных о ресурсах';
+    topEl.appendChild(emptyLi);
   } else {
     for (const r of top) {
       const li = document.createElement('li');
@@ -298,7 +342,6 @@ function updateBlockButtonUI(blockBtn, blocked) {
   blockBtn.style.color = '#fff';
   blockBtn.style.display = '';
 }
-
 function syncModuleTogglesUI(cfg, host, isSiteWhitelisted) {
   const effective = resolveEffectiveModules(cfg, host, isSiteWhitelisted);
   const hostOverrides = (host && cfg.siteOverrides?.[host]) || {};
