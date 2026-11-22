@@ -1,0 +1,14 @@
+name = "astra-hash-aggregator"
+main = "hash-aggregator.js"
+compatibility_date = "2026-01-01"
+
+# Автоматическое обновление базы вредоносных SHA-256 хэшей каждые 6 часов
+[triggers]
+crons = ["0 */6 * * *"]
+
+# Хранилище KV для готового компактного JSON-пакета хэшей
+# Перед деплоем выполните: npx wrangler kv namespace create ASTRA_HASHES_KV
+# и вставьте полученный id ниже:
+[[kv_namespaces]]
+binding = "ASTRA_HASHES_KV"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"

@@ -2,10 +2,9 @@
   "manifest_version": 3,
   "name": "Astra — Древо Щит",
   "short_name": "Astra",
-  "version": "0.6.3",
-  "description": "Бесплатный щит безопасности. Защита от фишинга, майнеров и рекламы.",
+  "version": "0.7.2",
+  "description": "Бесплатный щит безопасности. Защита от фишинга, майнеров, Pop-Under, WebRTC IP-утечек, трекеров и рекламы с гибкими правилами для каждого сайта.",
   "author": "Емельянов А.Н., Емельянов Н.Ю. (при участии DeepSeek и ИИ-ассистента Google)",
-  "minimum_chrome_version": "116",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -23,6 +22,7 @@
   },
   "background": {
     "service_worker": "src/background/service-worker.js",
+    "scripts": ["src/background/service-worker.js"],
     "type": "module"
   },
   "options_ui": {
@@ -40,7 +40,8 @@
     "notifications",
     "downloads",
     "alarms",
-    "webRequest"
+    "webRequest",
+    "contextMenus"
   ],
   "host_permissions": ["<all_urls>"],
   "content_scripts": [
@@ -50,7 +51,8 @@
         "src/content/ui-utils.js",
         "src/content/security-guards.js",
         "src/content/ad-picker.js",
-        "src/content/adblock-dom.js",
+        "src/content/adblock-static.js",
+        "src/content/adblock-smart.js",
         "src/content/metrics.js",
         "src/content/content-script.js"
       ],
@@ -72,5 +74,11 @@
       "resources": ["icons/logo.svg", "src/content/adblock.css"],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "astra-shield@local.dev",
+      "strict_min_version": "115.0"
+    }
+  }
 }

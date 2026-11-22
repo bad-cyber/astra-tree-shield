@@ -1,5 +1,5 @@
-/* options.js — Astra · Древо Щит · v0.6.3
-   Входной модуль страницы настроек (навигация, общие параметры, статистика, бэкап).
+/* options.js — Astra · Древо Щит · v0.7.0
+   Входной модуль страницы настроек (навигация, общие параметры, статистика, бэкап — B45, агрегатор хэшей — B56).
 */
 import { loadConfig, saveConfig, DEFAULTS } from "../shared/config.js";
 import { $, escapeHtml, formatRuleDate, formatBytes } from "./options-utils.js";
@@ -15,28 +15,60 @@ async function init() {
   if (versionDisplay) versionDisplay.textContent = version;
   if (versionDisplayAbout) versionDisplayAbout.textContent = version;
 
-  // --- 1. НАВИГАЦИЯ ---
+  // --- 1. НАВИГАЦИЯ (с поддержкой прямого URL-хэша B45) ---
   const navLinks = document.querySelectorAll(".side nav a");
   const sections = document.querySelectorAll(".content section");
-  navLinks.forEach(link => {
+
+  function activateSection(rawId) {
+    const cleanId = (rawId || "").replace(/^#/, "");
+    const target = cleanId ? document.getElementById(cleanId) : null;
+    const activeSec = target || (sections.length > 0 ? sections.item(0) : null);
+    if (!activeSec) return;
+
+    navLinks.forEach((l) => {
+      const hrefId = (l.getAttribute("href") || "").replace(/^#/, "");
+      l.classList.toggle("active", hrefId === activeSec.id);
+    });
+    sections.forEach((s) => s.classList.toggle("active-section", s.id === activeSec.id));
+  }
+
+  navLinks.forEach((link) => {
     link.addEventListener("click", (e) => {
       e.preventDefault();
-      navLinks.forEach(l => l.classList.remove("active"));
-      sections.forEach(s => s.classList.remove("active-section"));
-      link.classList.add("active");
-      const targetId = link.getAttribute("href").substring(1);
-      const target = document.getElementById(targetId);
-      if (target) target.classList.add("active-section");
+      const targetId = (link.getAttribute("href") || "").replace(/^#/, "");
+      activateSection(targetId);
+      if (targetId) {
+        try { history.replaceState(null, "", "#" + targetId); } catch {}
+      }
     });
   });
-  if (sections.length > 0) sections.item(0).classList.add("active-section");
 
+  activateSection(location.hash);
+  window.addEventListener("hashchange", () => activateSection(location.hash));
   // --- 2. НАСТРОЙКИ ---
-  $("#enabled").checked = cfg.enabled;
-  $("#theme").value = cfg.theme;
+  function syncFormFromConfig(currentCfg) {
+    if ($("#enabled")) $("#enabled").checked = !!currentCfg.enabled;
+    if ($("#theme")) $("#theme").value = currentCfg.theme;
+    document.documentElement.setAttribute("data-theme", currentCfg.theme);
 
-  document.querySelectorAll("input[data-mod]").forEach(el => {
-    el.checked = !!cfg.modules[el.dataset.mod];
+    document.querySelectorAll("input[data-mod]").forEach((el) => {
+      el.checked = !!currentCfg.modules[el.dataset.mod];
+    });
+
+    if ($("#loadMonitorEnabled")) {
+      $("#loadMonitorEnabled").checked = currentCfg.loadMonitor?.enabled !== false;
+    }
+    if ($("#loadMonitorWarnMB")) {
+      $("#loadMonitorWarnMB").value = currentCfg.loadMonitor?.warnMB || 5;
+    }
+    if ($("#hashFeedUrlInput")) {
+      $("#hashFeedUrlInput").value = currentCfg.hashFeedUrl || "";
+    }
+  }
+
+  syncFormFromConfig(cfg);
+
+  document.querySelectorAll("input[data-mod]").forEach((el) => {
     el.addEventListener("change", async () => {
       await saveConfig({ modules: { [el.dataset.mod]: el.checked } });
     });
@@ -45,14 +77,12 @@ async function init() {
   const lmEnabled = $("#loadMonitorEnabled");
   const lmWarn = $("#loadMonitorWarnMB");
   if (lmEnabled) {
-    lmEnabled.checked = cfg.loadMonitor?.enabled !== false;
     lmEnabled.addEventListener("change", async (e) => {
       const cur = await loadConfig();
       await saveConfig({ loadMonitor: { ...cur.loadMonitor, enabled: e.target.checked } });
     });
   }
   if (lmWarn) {
-    lmWarn.value = cfg.loadMonitor?.warnMB || 5;
     lmWarn.addEventListener("change", async (e) => {
       const v = Math.max(1, Math.min(50, parseInt(e.target.value, 10) || 5));
       e.target.value = v;
@@ -61,20 +91,68 @@ async function init() {
     });
   }
 
-  $("#enabled").addEventListener("change", e => saveConfig({ enabled: e.target.checked }));
-  $("#theme").addEventListener("change", async e => {
+  $("#saveHashFeedBtn")?.addEventListener("click", async () => {
+    const input = $("#hashFeedUrlInput");
+    const statusEl = $("#hashFeedStatus");
+    if (!input) return;
+    const raw = input.value.trim();
+    if (raw) {
+      try {
+        const parsed = new URL(raw);
+        if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+          throw new Error("URL должен начинаться с https://");
+        }
+      } catch (err) {
+        if (statusEl) {
+          statusEl.style.color = "var(--danger)";
+          statusEl.textContent = "Ошибка: укажите корректный URL (https://...)";
+        }
+        return;
+      }
+    }
+    await saveConfig({ hashFeedUrl: raw });
+    if (statusEl) {
+      statusEl.style.color = "var(--ok)";
+      statusEl.textContent = raw ? "URL сохранён. Идёт синхронизация хэшей..." : "URL очищен. Используются встроенные эталонные хэши.";
+    }
+    await chrome.runtime.sendMessage({ type: "FORCE_UPDATE_DB" }).catch(() => {});
+    await loadDbStats();
+  });
+
+  $("#enabled").addEventListener("change", (e) => saveConfig({ enabled: e.target.checked }));
+  $("#theme").addEventListener("change", async (e) => {
     await saveConfig({ theme: e.target.value });
     document.documentElement.setAttribute("data-theme", e.target.value);
+  });
+
+  chrome.storage.onChanged.addListener(async (changes, area) => {
+    if (area === "sync" && changes.config) {
+      const nextCfg = await loadConfig();
+      syncFormFromConfig(nextCfg);
+    }
+    if (area === "local" && (changes.adblockCount || changes.threatFeed || changes.trafficStats || changes.lastAdblockUpdate || changes.maliciousHashesCount)) {
+      loadDbStats();
+    }
   });
   // --- 3. СТАТИСТИКА БАЗ И ЭКОНОМИИ ТРАФИКА ---
   async function loadDbStats() {
     const storage = await chrome.storage.local.get([
-      "lastAdblockUpdate", "adblockCount", "adblockStatus", "adblockError", "threatFeed", "trafficStats"
+      "lastAdblockUpdate", "adblockCount", "adblockStatus", "adblockError",
+      "threatFeed", "trafficStats", "maliciousHashesCount", "maliciousHashesStatus", "maliciousHashesError"
     ]);
 
     $("#adblockCount").textContent = storage.adblockCount || 0;
     if ($("#threatFeedCount")) {
       $("#threatFeedCount").textContent = (storage.threatFeed || []).length;
+    }
+    if ($("#hashFeedCount")) {
+      $("#hashFeedCount").textContent = storage.maliciousHashesCount || 4;
+    }
+
+    const hashStatusEl = $("#hashFeedStatus");
+    if (hashStatusEl && storage.maliciousHashesStatus === "error" && storage.maliciousHashesError) {
+      hashStatusEl.style.color = "var(--danger)";
+      hashStatusEl.textContent = `Ошибка синхронизации хэшей: ${storage.maliciousHashesError}`;
     }
 
     const dateEl = $("#adblockDate");
@@ -110,10 +188,13 @@ async function init() {
     try {
       await chrome.runtime.sendMessage({ type: "FORCE_UPDATE_DB" });
       await loadDbStats();
+      btn.textContent = "✓ Базы обновлены";
+      setTimeout(() => { btn.textContent = "Обновить базы сейчас"; }, 1800);
     } catch (err) {
       console.warn(err);
+      btn.textContent = "Ошибка обновления";
+      setTimeout(() => { btn.textContent = "Обновить базы сейчас"; }, 2000);
     } finally {
-      btn.textContent = "Обновить базы сейчас";
       btn.disabled = false;
     }
   });
@@ -145,7 +226,9 @@ async function init() {
     const a = document.createElement("a");
     a.href = url;
     a.download = `astra-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
     a.click();
+    a.remove();
     URL.revokeObjectURL(url);
   });
 

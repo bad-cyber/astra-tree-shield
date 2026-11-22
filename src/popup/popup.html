@@ -45,7 +45,6 @@
       <ul class="analysis-list" id="domList" style="display:none;"><li class="empty">Загрузка...</li></ul>
     </div>
   </section>
-
   <section class="load-monitor" id="loadMonitor" style="display:none;">
     <div class="load-head">
       <span class="load-title">📊 Загрузка страницы</span>
@@ -60,12 +59,19 @@
       <ol class="load-top" id="loadTop"></ol>
     </details>
   </section>
-
   <section class="toggles" id="toggles" style="margin-top: 12px;">
+    <div class="toggles-head" id="togglesHead">
+      <span class="toggles-scope" id="siteScopeLabel">Глобальные настройки</span>
+      <button type="button" id="resetSiteOverridesBtn" class="reset-site-btn" style="display:none;" title="Вернуть модули для этого сайта к общим настройкам">Сбросить для сайта</button>
+    </div>
     <label class="switch-row"><span>🛡 Антифишинг</span><input type="checkbox" data-mod="phishing"></label>
     <label class="switch-row"><span>🚫 Реклама и трекеры</span><input type="checkbox" data-mod="ads"></label>
     <label class="switch-row"><span>⛏ Защита от майнеров</span><input type="checkbox" data-mod="miners"></label>
     <label class="switch-row"><span>🖱 Кликджекинг</span><input type="checkbox" data-mod="clickjacking"></label>
+    <label class="switch-row"><span>🪟 Анти-Pop-Under</span><input type="checkbox" data-mod="popunder"></label>
+    <label class="switch-row" title="Защита от слежки по Canvas, AudioContext и характеристикам устройства"><span>🧬 Anti-Fingerprinting</span><input type="checkbox" data-mod="antiFingerprint"></label>
+    <label class="switch-row" title="Запрещает сайту ставить видео на паузу при переключении вкладки (Page Visibility Spoof)"><span>📺 Анти-пауза видео в фоне</span><input type="checkbox" data-mod="visibilitySpoof"></label>
+    <label class="switch-row" title="Скрывает локальный IP-адрес и mDNS-имя устройства в WebRTC, сохраняя звонки через STUN/TURN"><span>🌐 Защита от утечки IP (WebRTC)</span><input type="checkbox" data-mod="webrtcShield"></label>
   </section>
 
   <footer class="popup-foot">

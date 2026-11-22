@@ -1,12 +1,13 @@
-// adblock-engine.js — Astra · Древо Щит · v0.6.3
-// Движок @ghostery/adblocker, загрузка списков фильтров и управление правилами DNR.
+// adblock-engine.js — Astra · Древо Щит · v0.7.0
+// Движок @ghostery/adblocker, загрузка списков фильтров (реклама + трекеры) и управление правилами DNR.
 
 import { FiltersEngine } from '../../vendor/adblocker.bundle.js';
 import { loadConfig } from '../shared/config.js';
 
-const ENGINE_CACHE_KEY = 'astra_adblocker_engine_v2';
+const ENGINE_CACHE_KEY = 'astra_adblocker_engine_v4';
 const CACHED_DOMAINS_KEY = 'cachedAdblockDomains';
 const FETCH_TIMEOUT_MS = 25000;
+const MAX_DYNAMIC_DOMAINS = 15000;
 const u = (s) => s.replace(/\s+/g, '');
 
 export const ID_RANGES = {
@@ -17,22 +18,49 @@ export const ID_RANGES = {
 };
 
 const FILTER_MIRROR_GROUPS = [
-  [
-    u('https: / / easylist.to / easylist / easylist.txt'),
-    u('https: / / cdn.jsdelivr.net / gh / easylist / easylist@master / easylist / easylist_adservers.txt'),
-    u('https: / / fastly.jsdelivr.net / gh / easylist / easylist@master / easylist / easylist_adservers.txt'),
-  ],
-  [
-    u('https: / / easylist-downloads.adblockplus.org / ruadlist+easylist.txt'),
-    u('https: / / ://githubusercontent.com / Dimisa / ruadlist / master / ruadlist.txt'),
-    u('https: / / cdn.jsdelivr.net / gh / Dimisa / ruadlist@master / ruadlist.txt'),
-  ],
+  {
+    name: 'EasyList',
+    quota: 4500,
+    mirrors: [
+      u('https: / / easylist.to / easylist / easylist.txt'),
+      u('https: / / cdn.jsdelivr.net / gh / easylist / easylist@master / easylist / easylist_adservers.txt'),
+      u('https: / / fastly.jsdelivr.net / gh / easylist / easylist@master / easylist / easylist_adservers.txt'),
+    ],
+  },
+  {
+    name: 'RuAdList',
+    quota: 3500,
+    mirrors: [
+      u('https: / / easylist-downloads.adblockplus.org / ruadlist+easylist.txt'),
+      u('https: / / ://githubusercontent.com / Dimisa / ruadlist / master / ruadlist.txt'),
+      u('https: / / cdn.jsdelivr.net / gh / Dimisa / ruadlist@master / ruadlist.txt'),
+    ],
+  },
+  {
+    name: 'EasyPrivacy',
+    quota: 4500,
+    mirrors: [
+      u('https: / / easylist.to / easylist / easyprivacy.txt'),
+      u('https: / / cdn.jsdelivr.net / gh / easylist / easylist@master / easyprivacy / easyprivacy_trackingservers.txt'),
+      u('https: / / fastly.jsdelivr.net / gh / easylist / easylist@master / easyprivacy / easyprivacy_trackingservers.txt'),
+    ],
+  },
+  {
+    name: 'PeterLoweTrackers',
+    quota: 2500,
+    mirrors: [
+      u('https: / / pgl.yoyo.org / adservers / serverlist.php?hostformat=adblockplus&showintro=0&mimetype=plaintext'),
+      u('https: / / ://githubusercontent.com / StevenBlack / hosts / master / hosts'),
+    ],
+  },
 ];
 
 const BASE_ADBLOCK_DOMAINS = [
-  'yandex.ru/an', 'an.yandex.ru', 'yabs.yandex.ru', 'awaps.yandex.ru',
-  '://vk.com', 'ads.vk.ru', 'ad.mail.ru', 'r.mail.ru', 'top-fwz1.mail.ru',
-  '://googlesyndication.com', 'googlesyndication.com', 'googleadservices.com', '://google.com',
+  'an.yandex.ru', 'yabs.yandex.ru', 'awaps.yandex.ru', 'advertising.yandex.ru',
+  'mc.yandex.ru', '://yandex.com', 'metrika.yandex.ru',
+  'vk.com', 'ads.vk.ru', 'ad.mail.ru', 'r.mail.ru', 'top-fwz1.mail.ru',
+  'googlesyndication.com', '://googlesyndication.com', 'googleadservices.com',
+  '://google.com', 'google-analytics.com', 'googletagmanager.com',
   'adfox.ru', 'adriver.ru', 'doubleclick.net', 'criteo.com', 'criteo.net',
   'taboola.com', 'outbrain.com', 'mytarget.ru', 'adnxs.com', 'adsrvr.org',
   'smartadserver.com', 'rubiconproject.com', 'pubmatic.com', 'openx.net',
@@ -40,15 +68,20 @@ const BASE_ADBLOCK_DOMAINS = [
   'vungle.com', 'chartboost.com', 'ironsrc.com', 'supersonicads.com',
   'adform.net', 'flashtalking.com', 'serving-sys.com', 'sizmek.com',
   'media.net', 'yieldmo.com', 'sharethrough.com', 'teads.tv',
+  'scorecardresearch.com', 'quantserve.com', 'hotjar.com', 'mixpanel.com',
+  'segment.io', 'segment.com', 'amplitude.com', 'clarity.ms', 'sentry.io',
+  'connect.facebook.net', 'facebook.com', '://bing.com', 'ads-twitter.com',
+  'trackersimulator.org', 'eviltracker.net', 'do-not-tracker.org', 'anon-stats.eff.org',
 ];
-
 const HARDCODED_AD_RULES = [
   { url: '||yandex.ru/an',                types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
   { url: '||an.yandex.ru^',               types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
   { url: '||yabs.yandex.ru^',             types: ['script', 'xmlhttprequest', 'image'] },
   { url: '||awaps.yandex.ru^',            types: ['script', 'xmlhttprequest', 'image'] },
   { url: '||advertising.yandex.ru^',      types: ['script', 'xmlhttprequest', 'image', 'sub_frame'] },
-  { url: '||://vk.com^',                 types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||mc.yandex.ru^',               types: ['script', 'xmlhttprequest', 'image', 'ping'] },
+  { url: '||://yandex.com^',         types: ['script', 'xmlhttprequest', 'image', 'ping'] },
+  { url: '||://vk.com',                 types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
   { url: '||ads.vk.ru^',                  types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
   { url: '||ad.mail.ru^',                 types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
   { url: '||r.mail.ru^',                  types: ['script', 'xmlhttprequest', 'image', 'ping'] },
@@ -56,7 +89,9 @@ const HARDCODED_AD_RULES = [
   { url: '||://googlesyndication.com^', types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
   { url: '||googlesyndication.com^',      types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
   { url: '||googleadservices.com^',       types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
-  { url: '||://google.com^',       types: ['script', 'sub_frame', 'xmlhttprequest'] },
+  { url: '||://google.com',       types: ['script', 'sub_frame', 'xmlhttprequest'] },
+  { url: '||google-analytics.com^',       types: ['script', 'xmlhttprequest', 'image', 'ping'] },
+  { url: '||googletagmanager.com^',       types: ['script', 'xmlhttprequest', 'sub_frame'] },
   { url: '||adfox.ru^',                   types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
   { url: '||adriver.ru^',                 types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
   { url: '||doubleclick.net^',            types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
@@ -64,7 +99,13 @@ const HARDCODED_AD_RULES = [
   { url: '||criteo.net^',                 types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
   { url: '||taboola.com^',                types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
   { url: '||outbrain.com^',               types: ['script', 'sub_frame', 'xmlhttprequest', 'image'] },
+  { url: '||scorecardresearch.com^',      types: ['script', 'xmlhttprequest', 'image', 'ping'] },
+  { url: '||trackersimulator.org^',       types: ['script', 'sub_frame', 'xmlhttprequest', 'image', 'ping', 'stylesheet', 'font', 'media', 'other'] },
+  { url: '||eviltracker.net^',            types: ['script', 'sub_frame', 'xmlhttprequest', 'image', 'ping', 'stylesheet', 'font', 'media', 'other'] },
+  { url: '||do-not-tracker.org^',         types: ['script', 'sub_frame', 'xmlhttprequest', 'image', 'ping', 'stylesheet', 'font', 'media', 'other'] },
+  { url: '||anon-stats.eff.org^',         types: ['script', 'sub_frame', 'xmlhttprequest', 'image', 'ping', 'stylesheet', 'font', 'media', 'other'] },
 ];
+
 const URL_PATTERN_RULES = [
   { urlFilter: 'erid=',           types: ['script', 'image', 'sub_frame', 'xmlhttprequest', 'ping'] },
   { urlFilter: 'adriver=',        types: ['script', 'image', 'sub_frame', 'xmlhttprequest', 'ping'] },
@@ -72,12 +113,16 @@ const URL_PATTERN_RULES = [
   { urlFilter: 'advertising_id=', types: ['script', 'image', 'sub_frame', 'xmlhttprequest', 'ping'] },
   { urlFilter: 'gclid=',          types: ['script', 'image', 'sub_frame', 'xmlhttprequest', 'ping'] },
   { urlFilter: 'fbclid=',         types: ['script', 'image', 'sub_frame', 'xmlhttprequest', 'ping'] },
+  { urlFilter: 'utm_source=',     types: ['image', 'ping'] },
   { urlFilter: '*/banner^',       types: ['script', 'sub_frame', 'xmlhttprequest'] },
   { urlFilter: '*/banners^',      types: ['script', 'sub_frame', 'xmlhttprequest'] },
   { urlFilter: '*/advert^',       types: ['script', 'sub_frame', 'xmlhttprequest'] },
   { urlFilter: '*/adverts^',      types: ['script', 'sub_frame', 'xmlhttprequest'] },
   { urlFilter: '*/promo^',        types: ['script', 'sub_frame', 'xmlhttprequest'] },
   { urlFilter: '*/sponsor^',      types: ['script', 'sub_frame', 'xmlhttprequest'] },
+  { urlFilter: '*/pixel^',        types: ['image', 'ping', 'xmlhttprequest'] },
+  { urlFilter: '*/tracker^',      types: ['script', 'image', 'ping', 'xmlhttprequest'] },
+  { urlFilter: '*/telemetry^',    types: ['xmlhttprequest', 'ping'] },
 ];
 
 let engine = null;
@@ -101,8 +146,7 @@ function base64ToUint8(base64) {
   }
   return bytes;
 }
-
-async function fetchFromMirrorGroup(mirrors, userAgent = 'Astra-Browser-Extension/0.6.3') {
+async function fetchFromMirrorGroup(mirrors, userAgent = 'Astra-Browser-Extension/0.7.0') {
   let lastError = null;
   for (const url of mirrors) {
     try {
@@ -146,7 +190,7 @@ export async function getEngine() {
 
   const texts = [];
   for (const group of FILTER_MIRROR_GROUPS) {
-    const res = await fetchFromMirrorGroup(group, 'Astra-Browser-Extension/0.6.3');
+    const res = await fetchFromMirrorGroup(group.mirrors, 'Astra-Browser-Extension/0.7.0');
     if (res.text) texts.push(res.text);
   }
 
@@ -168,19 +212,32 @@ export async function getEngine() {
   console.log('[Astra] Движок анализатора собран и закеширован (Base64).');
   return engine;
 }
+
+const UNSAFE_RULE_MODIFIERS_RE = /\$(?:.*(?:document|elemhide|generichide|genericblock|popup|popunder|csp|removeparam|redirect|domain=|~third-party))/i;
+
 function extractDomain(line) {
   if (!line || line.startsWith('!') || line.startsWith('[') || line.startsWith('#')) return null;
-  if (line.includes('##') || line.includes('#@#')) return null;
+  if (line.includes('##') || line.includes('#@#') || line.includes('#?#')) return null;
   if (line.startsWith('@@')) return null;
-  if (line.includes('$') || line.includes('/')) return null;
 
-  const match = line.match(/^\|\|([a-zA-Z0-9.-]+)\^?$/);
+  const hostsMatch = line.match(/^(?:0\.0\.0\.0|127\.0\.0\.1)\s+([a-zA-Z0-9.-]+)$/);
+  if (hostsMatch) {
+    const hd = hostsMatch.at(1).toLowerCase();
+    if (!hd || hd === 'localhost' || hd.length < 3 || hd.includes('..')) return null;
+    return hd;
+  }
+
+  if (UNSAFE_RULE_MODIFIERS_RE.test(line)) return null;
+
+  const cleanRule = line.split('$')[0];
+  if (cleanRule.includes('/') || cleanRule.includes('*')) return null;
+
+  const match = cleanRule.match(/^\|\|([a-zA-Z0-9.-]+)\^?$/);
   if (!match) return null;
-  const d = match.at(1);
+  const d = match.at(1).toLowerCase();
   if (!d || d.length < 3 || d.includes('..') || d.startsWith('.') || d.endsWith('.')) return null;
   return d;
 }
-
 export async function clearAdblockDnrRules() {
   try {
     const oldRules = await chrome.declarativeNetRequest.getDynamicRules();
@@ -209,19 +266,22 @@ export async function updateAdblockRules() {
   let succeededSources = 0;
 
   for (const group of FILTER_MIRROR_GROUPS) {
-    if (domains.size >= 4450) break;
-    const res = await fetchFromMirrorGroup(group, 'Astra-Browser-Extension/0.6.3');
+    if (domains.size >= MAX_DYNAMIC_DOMAINS) break;
+    const res = await fetchFromMirrorGroup(group.mirrors, 'Astra-Browser-Extension/0.7.0');
     if (!res.text) {
       if (res.error) lastError = res.error;
       continue;
     }
 
     succeededSources += 1;
+    let addedInGroup = 0;
+    const groupLimit = group.quota || 4000;
     for (const line of res.text.split(/\r?\n/)) {
-      if (domains.size >= 4450) break;
+      if (domains.size >= MAX_DYNAMIC_DOMAINS || addedInGroup >= groupLimit) break;
       const d = extractDomain(line.trim());
       if (d && !domains.has(d)) {
         domains.add(d);
+        addedInGroup += 1;
       }
     }
   }
@@ -236,7 +296,7 @@ export async function updateAdblockRules() {
     const cached = Array.isArray(stored[CACHED_DOMAINS_KEY]) ? stored[CACHED_DOMAINS_KEY] : [];
     if (cached.length > 0) {
       for (const d of cached) {
-        if (domains.size >= 4450) break;
+        if (domains.size >= MAX_DYNAMIC_DOMAINS) break;
         domains.add(d);
       }
     }
@@ -252,7 +312,8 @@ export async function updateAdblockRules() {
         action: { type: 'block' },
         condition: {
           urlFilter: `||${d}^`,
-          resourceTypes: ['script', 'image', 'xmlhttprequest', 'sub_frame', 'stylesheet', 'ping'],
+          domainType: 'thirdParty',
+          resourceTypes: ['script', 'image', 'xmlhttprequest', 'sub_frame', 'stylesheet', 'ping', 'font', 'media', 'other'],
         },
       });
     }
@@ -273,7 +334,7 @@ export async function updateAdblockRules() {
         id: pid++,
         priority: 50,
         action: { type: 'block' },
-        condition: { urlFilter: r.urlFilter, resourceTypes: r.types },
+        condition: { urlFilter: r.urlFilter || r.url, resourceTypes: r.types },
       });
     }
 

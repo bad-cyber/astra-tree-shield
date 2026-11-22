@@ -1,5 +1,5 @@
-/* security-guards.js — Astra · Древо Щит · v0.6.3
-   Экран антифишинга (B28), контентная эвристика форм, кликджекинг (B31), WASM/майнеры и HTTP.
+/* security-guards.js — Astra · Древо Щит · v0.7.0
+   Экран антифишинга (B28), контентные «якоря» фишинга (B41), кликджекинг (B31), WASM/майнеры, Pop-Under (B54) и HTTP.
 */
 (() => {
   'use strict';
@@ -90,34 +90,93 @@
     A.state.phishingOverlayShown = false;
   };
 
-  // Контентная эвристика фишинга (фейковые формы входа/банковских карт на не-белых доменах)
+  // ============================================================
+  // 🎯 КОНТЕНТНЫЕ «ЯКОРЯ» ЭВРИСТИКИ АНТИФИШИНГА (B41)
+  // ============================================================
+  const TRUSTED_PAYMENT_SUFFIXES = [
+    'yookassa.ru', 'yoomoney.ru', 'cloudpayments.ru', 'robokassa.ru',
+    'paykeeper.ru', 'unitpay.ru', 'tinkoff.ru', 'tbank.ru', 'sberbank.ru',
+    'alfabank.ru', 'vtb.ru', 'stripe.com', 'paypal.com'
+  ];
+
+  function isTrustedHostForHeuristics(host) {
+    const h = (host || '').toLowerCase().replace(/^www\./, '');
+    if (!h) return true;
+    if (A.state.isOfficialWhitelist) return true;
+    return TRUSTED_PAYMENT_SUFFIXES.some((d) => h === d || h.endsWith('.' + d));
+  }
+
+  function triggerDomPhishing(reason) {
+    const st = A.state;
+    A.renderPhishingOverlay(st.hostname, [reason]);
+    if (A.isContextValid()) {
+      try {
+        chrome.runtime.sendMessage({ type: 'REPORT_THREAT', kind: 'phishing-dom', reason }).catch(() => {});
+      } catch {}
+    }
+  }
+
   A.scanPagePhishingHeuristics = () => {
     const st = A.state;
     if (window.top !== window.self) return;
     if (st.isWhitelisted || st.phishingOverlayShown) return;
     if (!st.runtimeCfg.enabled || !st.runtimeCfg.modules.phishing) return;
+    if (isTrustedHostForHeuristics(st.hostname)) return;
 
     const passInputs = document.querySelectorAll('input[type="password"]');
-    const bodyText = A.norm((document.body?.innerText || '').slice(0, 3000));
-    const hasBankLure = /(сбербанк|госуслуги|тинькофф|т-банк|втб|альфа-банк|росфинмониторинг|безопасный счет|подтвердите вход|введите код из смс)/i.test(bodyText);
+    const bodyText = A.norm((document.body?.innerText || '').slice(0, 4000));
 
-    if (passInputs.length > 0 && hasBankLure) {
-      const reason = 'Обнаружена форма ввода пароля с упоминанием банка или госсервиса на стороннем домене';
-      A.renderPhishingOverlay(st.hostname, [reason]);
-      if (A.isContextValid()) {
-        try { chrome.runtime.sendMessage({ type: 'REPORT_THREAT', kind: 'phishing-dom', reason }).catch(() => {}); } catch {}
-      }
+    // Якорь 1: форма входа с упоминанием банков, госсервисов или популярных сервисов на стороннем домене
+    const hasBrandLure = /(сбербанк|госуслуги|тинькофф|т-банк|втб|альфа-банк|росфинмониторинг|безопасный счет|подтвердите вход|введите код из смс|steam community|steamcommunity|telegram web|войти через telegram|paypal|apple id|binance|bybit)/i.test(bodyText);
+    if (passInputs.length > 0 && hasBrandLure) {
+      triggerDomPhishing('Якорь 1: форма ввода пароля с упоминанием банка, госсервиса или известного бренда на стороннем домене');
+      return;
+    }
+    // Якорь 2: фишинг криптокошельков (запрос seed-фразы / мнемонической фразы)
+    const textInputs = document.querySelectorAll('input[type="text"], textarea');
+    const hasCryptoWalletLure = /(seed phrase|mnemonic phrase|secret recovery phrase|мнемоническая фраза|секретная фраза|12 слов|24 слова|metamask|tonkeeper|trust wallet)/i.test(bodyText);
+    if (textInputs.length > 0 && hasCryptoWalletLure && /(восстанов|import wallet|unlock wallet|подключить кошелек|connect wallet)/i.test(bodyText)) {
+      triggerDomPhishing('Якорь 2: запрос секретной seed-фразы криптокошелька на стороннем домене');
+      return;
+    }
+
+    // Якорь 3: форма ввода реквизитов банковской карты вне доверенных платёжных шлюзов
+    const ccField = document.querySelector('input[autocomplete*="cc-number"], input[autocomplete*="cc-csc"], input[name*="cardnumber" i], input[name*="card_number" i], input[id*="cardnumber" i]');
+    const cvvField = document.querySelector('input[name*="cvv" i], input[name*="cvc" i], input[id*="cvv" i], input[id*="cvc" i], input[placeholder*="CVV" i], input[placeholder*="CVC" i]');
+    if (ccField || (cvvField && /(номер карты|срок действия|card number|expiry|оплата картой)/i.test(bodyText))) {
+      triggerDomPhishing('Якорь 3: форма ввода данных банковской карты на несертифицированном домене');
+      return;
+    }
+
+    // Якорь 4: отправка формы с паролем по HTTP или на другой внешний домен
+    for (const inp of passInputs) {
+      const form = inp.closest('form');
+      const rawAction = form?.getAttribute('action') || '';
+      if (!rawAction || rawAction.startsWith('#') || rawAction.startsWith('/')) continue;
+      try {
+        const targetUrl = new URL(rawAction, location.href);
+        const targetHost = targetUrl.hostname.toLowerCase().replace(/^www\./, '');
+        if (targetUrl.protocol === 'http:' && location.protocol === 'https:') {
+          triggerDomPhishing('Якорь 4: форма отправляет пароль по незащищённому протоколу HTTP');
+          return;
+        }
+        if (targetHost && targetHost !== st.hostname && !targetHost.endsWith('.' + st.hostname)) {
+          triggerDomPhishing(`Якорь 4: форма отправляет пароль на сторонний домен (${targetHost})`);
+          return;
+        }
+      } catch {}
     }
   };
 
-  // WASM & MINER HOOKS
+  // WASM, MINER & POP-UNDER HOOKS (B54)
   let wasmCount = 0, wasmFirstTs = 0, wasmWarned = false;
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data || e.data.__astra !== true) return;
     const cfg = A.state.runtimeCfg;
-    if (!cfg.enabled || !cfg.modules.miners) return;
+    if (!cfg.enabled || A.state.isWhitelisted) return;
     const hook = e.data.hook;
-    if (hook === 'wasm-instantiate') {
+
+    if (hook === 'wasm-instantiate' && cfg.modules.miners) {
       const now = Date.now();
       if (!wasmFirstTs || now - wasmFirstTs > 10000) {
         wasmCount = 1; wasmFirstTs = now; wasmWarned = false;
@@ -127,7 +186,8 @@
         A.showToast({ title: 'Astra: массовый WASM', message: `Страница запустила ${wasmCount} WASM-модулей за 10 сек.`, kind: 'warn' });
       }
     }
-    if (hook === 'worker-spawn') {
+
+    if (hook === 'worker-spawn' && cfg.modules.miners) {
       const msgText = e.data.blocked
         ? 'Заблокирован скрипт криптомайнера в фоне.'
         : 'Обнаружен Worker с признаками майнера.';
@@ -142,7 +202,27 @@
         } catch {}
       }
     }
+
+    if (hook === 'popunder-blocked' && cfg.modules.popunder) {
+      let targetHost = '';
+      try { targetHost = new URL(e.data.url || '').hostname.replace(/^www\./, ''); } catch {}
+      const reasonText = e.data.reason === 'unsolicited'
+        ? 'Заблокировано автоматическое всплывающее окно'
+        : 'Заблокирован скрытый Pop-Under при клике по странице';
+      const detail = targetHost ? `${reasonText} (${targetHost}).` : `${reasonText}.`;
+      A.showToast({ title: 'Astra: защита от Pop-Under', message: detail, kind: 'warn' });
+      if (A.isContextValid()) {
+        try {
+          chrome.runtime.sendMessage({
+            type: 'REPORT_THREAT',
+            kind: 'popunder',
+            reason: detail,
+          }).catch(() => {});
+        } catch {}
+      }
+    }
   });
+
   // CLICKJACKING (B31)
   function isTransparentOverlay(st) {
     if (!st || st.display === 'none' || st.visibility === 'hidden') return false;

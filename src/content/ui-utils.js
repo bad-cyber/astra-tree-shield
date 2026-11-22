@@ -1,4 +1,4 @@
-/* ui-utils.js — Astra · Древо Щит · v0.6.3
+/* ui-utils.js — Astra · Древо Щит · v0.7.2
    Общее состояние контент-скриптов, тосты, реестр скрытых DOM-блоков и утилиты.
 */
 (() => {
@@ -13,20 +13,26 @@
     'github.com', 'google.com', 'youtube.com', 'wikipedia.org',
   ];
 
-  const hostname = location.hostname.replace(/^www\./, '');
+  const DEFAULT_MODULES = {
+    phishing: true,
+    ads: true,
+    miners: true,
+    downloads: true,
+    clickjacking: true,
+    popunder: true,
+    antiFingerprint: false,
+    visibilitySpoof: false,
+    webrtcShield: false,
+  };
+
+  const hostname = location.hostname.replace(/^www\./, '').toLowerCase();
   A.state = {
     hostname,
     isWhitelisted: LOCAL_WHITELIST.some((d) => hostname === d || hostname.endsWith('.' + d)),
     phishingOverlayShown: false,
     runtimeCfg: {
       enabled: true,
-      modules: {
-        phishing: true,
-        ads: true,
-        miners: true,
-        downloads: true,
-        clickjacking: true,
-      },
+      modules: { ...DEFAULT_MODULES },
     },
   };
 
@@ -37,19 +43,60 @@
     catch { return false; }
   };
 
+  function findSiteOverride(siteOverrides, host) {
+    if (!host || !siteOverrides || typeof siteOverrides !== 'object') return null;
+    if (siteOverrides[host] && typeof siteOverrides[host] === 'object') return siteOverrides[host];
+    const parts = host.split('.');
+    for (let i = 1; i < parts.length - 1; i++) {
+      const parent = parts.slice(i).join('.');
+      if (siteOverrides[parent] && typeof siteOverrides[parent] === 'object') {
+        return siteOverrides[parent];
+      }
+    }
+    return null;
+  }
   A.syncRuntimeCfg = async () => {
     if (!A.isContextValid()) return A.state.runtimeCfg;
     try {
       const { config } = await chrome.storage.sync.get('config');
-      if (config) {
-        A.state.runtimeCfg = {
-          enabled: config.enabled !== false,
-          modules: { ...A.state.runtimeCfg.modules, ...(config.modules || {}) },
-        };
+      const enabled = config ? config.enabled !== false : true;
+      const baseMods = { ...DEFAULT_MODULES, ...(config?.modules || {}) };
+      const override = findSiteOverride(config?.siteOverrides, A.state.hostname);
+      const effectiveMods = {};
+
+      for (const k of Object.keys(baseMods)) {
+        if (!enabled) {
+          effectiveMods[k] = false;
+        } else if (override && typeof override[k] === 'boolean') {
+          effectiveMods[k] = override[k];
+        } else if (A.state.isWhitelisted) {
+          effectiveMods[k] = false;
+        } else {
+          effectiveMods[k] = !!baseMods[k];
+        }
       }
+
+      A.state.runtimeCfg = { enabled, modules: effectiveMods };
+
       window.postMessage({
         __astraCtrl: 'SET_MINERS',
-        enabled: !!(A.state.runtimeCfg.enabled && A.state.runtimeCfg.modules.miners),
+        enabled: !!effectiveMods.miners,
+      }, '*');
+      window.postMessage({
+        __astraCtrl: 'SET_POPUNDER',
+        enabled: !!effectiveMods.popunder,
+      }, '*');
+      window.postMessage({
+        __astraCtrl: 'SET_ANTIFP',
+        enabled: !!effectiveMods.antiFingerprint,
+      }, '*');
+      window.postMessage({
+        __astraCtrl: 'SET_VISIBILITY_SPOOF',
+        enabled: !!effectiveMods.visibilitySpoof,
+      }, '*');
+      window.postMessage({
+        __astraCtrl: 'SET_WEBRTC',
+        enabled: !!effectiveMods.webrtcShield,
       }, '*');
     } catch {}
     return A.state.runtimeCfg;
@@ -63,6 +110,7 @@
     let t;
     return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
   };
+
   A.safeClassName = (node) => {
     if (!node) return '';
     const c = node.className;
@@ -75,10 +123,6 @@
     if (/[-_]/.test(val)) return false;
     return /\d/.test(val) && /[a-zA-Z]/.test(val);
   };
-
-  // ============================================================
-  // 📊 ЕДИНЫЙ РЕЕСТР ЗАБЛОКИРОВАННЫХ DOM-БЛОКОВ (B15 / B16)
-  // ============================================================
   const reportedBlockKeys = new Set();
   const accumulatedBlocks = [];
 
@@ -124,6 +168,7 @@
     }
     return parts.join(' > ');
   };
+
   function extractBlockStructure(el, selector, preRect = null) {
     const rect = preRect || el.getBoundingClientRect();
     const links = Array.from(el.querySelectorAll('a[href]')).map(a => a.href).filter(Boolean);
@@ -147,7 +192,6 @@
       text,
     };
   }
-
   A.recordHiddenBlock = (el, selector, preRect = null) => {
     if (!el || !selector) return;
     const key = `${selector}|${el.id || ''}|${A.safeClassName(el).slice(0, 60)}`;
@@ -185,9 +229,6 @@
     return true;
   };
 
-  // ============================================================
-  // 🔔 СИСТЕМА ТОСТОВ
-  // ============================================================
   const TOAST_CSS = `
     .astra-toast-stack{position:fixed;top:16px;right:16px;z-index:2147483647;
       display:flex;flex-direction:column;gap:8px;pointer-events:none;

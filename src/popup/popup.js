@@ -1,9 +1,11 @@
-/* popup.js — Astra · Древо Щит · v0.6.2
-   Обновление v0.6.2:
-   - B28: Отображение причин угрозы при обнаружении фишинга или подозрительного домена в statusHost.
-   - B29: Синхронизация счётчика заблокированных элементов в футере попапа.
+/* popup.js — Astra · Древо Щит · v0.7.1
+   Обновление v0.7.1:
+   - B57: Per-Site Shields Overrides — индивидуальные переключатели модулей для текущего сайта с индикацией и сбросом.
 */
-import { loadConfig, saveConfig } from '../shared/config.js';
+import {
+  loadConfig, saveConfig, resolveEffectiveModules,
+  WHITELIST_DOMAINS, isHostInList
+} from '../shared/config.js';
 
 const $ = (sel) => document.querySelector(sel);
 let currentHost = '';
@@ -77,7 +79,8 @@ async function toggleUserRuleFromPopup(tabId, host, selector, sizeLabel) {
   return savedNow;
 }
 async function renderAnalysis() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = tabs.at(0);
   if (!tab?.id) return;
 
   const data = await safeSend({ type: 'GET_TAB_ANALYSIS', tabId: tab.id });
@@ -86,7 +89,7 @@ async function renderAnalysis() {
   const { astraUserAdBase = [], userWhitelist = [] } = await chrome.storage.local.get([
     'astraUserAdBase', 'userWhitelist'
   ]);
-  const isSiteWhitelisted = currentHost && userWhitelist.includes(currentHost);
+  const isSiteWhitelisted = currentHost && isHostInList(currentHost, userWhitelist);
 
   const reqCountEl = $('#reqCount');
   const domCountEl = $('#domCount');
@@ -152,7 +155,6 @@ async function renderAnalysis() {
             ${wlBtnHtml}
           </div>
         `;
-
         li.querySelector('[data-act="copy"]')?.addEventListener('click', async (e) => {
           const btn = e.currentTarget;
           const ok = await copyTextSafe(cleanSelector);
@@ -213,7 +215,8 @@ async function loadPageMetrics(warnMB) {
   const container = $('#loadMonitor');
   if (!container) return;
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = tabs.at(0);
   if (!tab?.id) return;
 
   let attempts = 0;
@@ -278,8 +281,59 @@ function renderMetrics(m, warnMB) {
   }
 }
 
+function applyStatusBanner(box, icon, title, hostEl, risk, host, reasons = []) {
+  box.classList.remove('ok', 'warn', 'danger');
+  box.classList.add(risk);
+  icon.textContent = risk === 'danger' ? '⛔' : risk === 'warn' ? '⚠️' : '🛡️';
+  title.textContent = risk === 'danger' ? 'Опасный сайт' : risk === 'warn' ? 'Подозрительный сайт' : 'Сайт безопасен';
+  const firstReason = reasons.at(0);
+  hostEl.textContent = firstReason && risk !== 'ok'
+    ? `${host || '—'} · ${firstReason}`
+    : (host || '—');
+}
+
+function updateBlockButtonUI(blockBtn, blocked) {
+  blockBtn.textContent = blocked ? '✅ Разблокировать сайт' : '🚫 Заблокировать сайт';
+  blockBtn.style.background = blocked ? 'var(--ok)' : 'var(--danger)';
+  blockBtn.style.color = '#fff';
+  blockBtn.style.display = '';
+}
+
+function syncModuleTogglesUI(cfg, host, isSiteWhitelisted) {
+  const effective = resolveEffectiveModules(cfg, host, isSiteWhitelisted);
+  const hostOverrides = (host && cfg.siteOverrides?.[host]) || {};
+  const hasAnyOverride = host && Object.keys(hostOverrides).length > 0;
+
+  const scopeEl = $('#siteScopeLabel');
+  const resetBtn = $('#resetSiteOverridesBtn');
+  if (scopeEl) {
+    if (!host) {
+      scopeEl.textContent = 'Глобальные настройки';
+    } else if (hasAnyOverride) {
+      scopeEl.textContent = `Настройки для ${host}`;
+    } else if (isSiteWhitelisted) {
+      scopeEl.textContent = `${host} (белый список)`;
+    } else {
+      scopeEl.textContent = `Щит для ${host}`;
+    }
+  }
+  if (resetBtn) {
+    resetBtn.style.display = hasAnyOverride ? '' : 'none';
+  }
+
+  document.querySelectorAll('input[data-mod]').forEach((el) => {
+    const mod = el.dataset.mod;
+    el.checked = !!effective[mod];
+    el.disabled = !cfg.enabled;
+    const row = el.closest('.switch-row');
+    if (row) {
+      row.classList.toggle('overridden', !!(host && typeof hostOverrides[mod] === 'boolean'));
+    }
+  });
+}
+
 async function init() {
-  const cfg = await loadConfig();
+  let cfg = await loadConfig();
   document.documentElement.setAttribute('data-theme', cfg.theme);
 
   const resp = await safeSend({ type: 'GET_TAB_STATUS' });
@@ -290,6 +344,7 @@ async function init() {
   const blockBtn = $('#toggleBlockBtn');
   const whitelistBtn = $('#toggleWhitelistBtn');
   const pickBtn = $('#pickAdBtn');
+  let isSiteWhitelisted = false;
 
   if (!resp || !resp.status) {
     box.classList.add('warn');
@@ -301,33 +356,33 @@ async function init() {
   } else {
     const { risk, host, reasons = [] } = resp.status;
     currentHost = host;
-
-    box.classList.remove('ok', 'warn', 'danger');
-    box.classList.add(risk);
-    icon.textContent = risk === 'danger' ? '⛔' : risk === 'warn' ? '⚠️' : '🛡️';
-    title.textContent = risk === 'danger' ? 'Опасный сайт' : risk === 'warn' ? 'Подозрительный сайт' : 'Сайт безопасен';
-    hostEl.textContent = reasons.length && risk !== 'ok'
-      ? `${host || '—'} · ${reasons[0]}`
-      : (host || '—');
+    applyStatusBanner(box, icon, title, hostEl, risk, host, reasons);
 
     if (host) {
       const userBlocklist = resp.adblock?.userBlocklist || [];
       const userWhitelist = resp.adblock?.userWhitelist || [];
-      const isBlocked = userBlocklist.includes(host);
-      const isWhitelisted = userWhitelist.includes(host);
+      let isBlocked = userBlocklist.includes(host);
+      const isUserWhitelisted = isHostInList(host, userWhitelist);
+      isSiteWhitelisted = isUserWhitelisted || isHostInList(host, WHITELIST_DOMAINS);
 
-      blockBtn.textContent = isBlocked ? '✅ Разблокировать сайт' : '🚫 Заблокировать сайт';
-      blockBtn.style.background = isBlocked ? 'var(--ok)' : 'var(--danger)';
-      blockBtn.style.color = '#fff';
-      blockBtn.style.display = '';
+      updateBlockButtonUI(blockBtn, isBlocked);
 
       blockBtn.addEventListener('click', async () => {
         blockBtn.disabled = true;
-        await safeSend({ type: 'TOGGLE_BLOCK_SITE', host });
-        window.location.reload();
+        const result = await safeSend({ type: 'TOGGLE_BLOCK_SITE', host });
+        isBlocked = result?.blocked !== undefined ? !!result.blocked : !isBlocked;
+        updateBlockButtonUI(blockBtn, isBlocked);
+        if (isBlocked) {
+          applyStatusBanner(box, icon, title, hostEl, 'danger', host, ['Заблокировано пользователем']);
+        } else {
+          const fresh = await safeSend({ type: 'GET_TAB_STATUS' });
+          const nextStatus = fresh?.status || { risk: 'ok', host, reasons: [] };
+          applyStatusBanner(box, icon, title, hostEl, nextStatus.risk, host, nextStatus.reasons || []);
+        }
+        blockBtn.disabled = false;
       });
 
-      whitelistBtn.textContent = isWhitelisted ? '🛡️ Включить защиту обратно' : '🤍 Отключить защиту на сайте';
+      whitelistBtn.textContent = isUserWhitelisted ? '🛡️ Включить защиту обратно' : '🤍 Отключить защиту на сайте';
       whitelistBtn.style.display = '';
 
       whitelistBtn.addEventListener('click', async () => {
@@ -341,6 +396,36 @@ async function init() {
       whitelistBtn.style.display = 'none';
     }
   }
+
+  syncModuleTogglesUI(cfg, currentHost, isSiteWhitelisted);
+
+  $('#resetSiteOverridesBtn')?.addEventListener('click', async () => {
+    if (!currentHost) return;
+    cfg = await saveConfig({ siteOverrides: { [currentHost]: null } });
+    syncModuleTogglesUI(cfg, currentHost, isSiteWhitelisted);
+  });
+
+  document.querySelectorAll('input[data-mod]').forEach((el) => {
+    el.addEventListener('change', async () => {
+      const mod = el.dataset.mod;
+      if (!currentHost) {
+        cfg = await saveConfig({ modules: { [mod]: el.checked } });
+        syncModuleTogglesUI(cfg, currentHost, isSiteWhitelisted);
+        return;
+      }
+      const defaultForSite = isSiteWhitelisted ? false : !!cfg.modules[mod];
+      const nextHostMap = { ...(cfg.siteOverrides?.[currentHost] || {}) };
+      if (el.checked === defaultForSite) {
+        delete nextHostMap[mod];
+      } else {
+        nextHostMap[mod] = el.checked;
+      }
+      cfg = await saveConfig({
+        siteOverrides: { [currentHost]: Object.keys(nextHostMap).length ? nextHostMap : null }
+      });
+      syncModuleTogglesUI(cfg, currentHost, isSiteWhitelisted);
+    });
+  });
 
   const tStats = resp?.adblock?.trafficStats || {};
   const savedBytes = tStats.savedBytes || 0;
@@ -357,18 +442,12 @@ async function init() {
   if (trafficEl) trafficEl.textContent = formatMB(savedBytes);
   if (adTotalEl) adTotalEl.textContent = totalAdElements;
 
-  document.querySelectorAll('input[data-mod]').forEach((el) => {
-    el.checked = !!cfg.modules[el.dataset.mod];
-    el.addEventListener('change', async () => {
-      await saveConfig({ modules: { [el.dataset.mod]: el.checked } });
-    });
-  });
-
   $('#openOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
 
   if (pickBtn) {
     pickBtn.addEventListener('click', async () => {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tab = tabs.at(0);
       if (!tab?.id) return;
       try {
         await chrome.tabs.sendMessage(tab.id, { type: 'START_PICK' });

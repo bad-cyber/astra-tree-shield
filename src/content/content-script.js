@@ -1,5 +1,5 @@
-/* content-script.js — Astra · Древо Щит · v0.6.3
-   Компактный входной оркестратор модулей (ui-utils, security-guards, ad-picker, adblock-dom, metrics).
+/* content-script.js — Astra · Древо Щит · v0.7.1
+   Компактный входной оркестратор модулей (ui-utils, security-guards, ad-picker, adblock-static, adblock-smart, metrics).
 */
 (() => {
   'use strict';
@@ -8,12 +8,29 @@
   A.orchestratorLoaded = true;
 
   const st = A.state;
+  let adObserverStarted = false;
+
+  function runAdblockPass() {
+    A.injectAdblockCSS();
+    A.scanStaticCssHiddenAds();
+    A.hideNativeAds();
+    A.hideAdIframes();
+    A.smartScanAds();
+    A.analyzeDomAds();
+    if (!adObserverStarted) {
+      A.startAdObserver();
+      adObserverStarted = true;
+    }
+  }
 
   chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === 'START_PICK') A.startPickMode();
+    if (msg.type === 'START_PICK') A.startPickMode({ fromContextMenu: !!msg.fromContextMenu });
     if (msg.type === 'USER_BASE_UPDATED') A.applyUserAdBase();
     if (msg.type === 'SHOW_PHISHING_WARNING') {
       A.renderPhishingOverlay(msg.host || st.hostname, msg.reasons || []);
+    }
+    if (msg.type === 'HIDE_PHISHING_WARNING') {
+      A.hidePhishingOverlay();
     }
     return false;
   });
@@ -24,22 +41,15 @@
       const cfg = await A.syncRuntimeCfg();
       if (!cfg.enabled || !cfg.modules.ads) {
         A.removeAdblockStyles();
-      } else if (!st.isWhitelisted) {
-        A.injectAdblockCSS();
-        A.scanStaticCssHiddenAds();
-        A.hideNativeAds();
-        A.hideAdIframes();
-        A.smartScanAds();
-        A.analyzeDomAds();
+      } else {
+        runAdblockPass();
       }
       if (!cfg.enabled || !cfg.modules.phishing) {
         A.hidePhishingOverlay();
       }
     });
   }
-
   async function init() {
-    const cfg = await A.syncRuntimeCfg();
     try {
       if (A.isContextValid()) {
         const { userWhitelist = [] } = await chrome.storage.local.get('userWhitelist');
@@ -48,45 +58,49 @@
       }
     } catch {}
 
-    if (!st.isWhitelisted && cfg.enabled && cfg.modules.phishing && A.isContextValid()) {
-      chrome.runtime.sendMessage({ type: 'GET_CURRENT_TAB_SECURITY', url: location.href })
-        .then((res) => {
-          if (res?.risk === 'danger') {
-            A.renderPhishingOverlay(res.host || st.hostname, res.reasons || []);
-          }
-        })
-        .catch(() => {});
+    const cfg = await A.syncRuntimeCfg();
+
+    if (cfg.enabled && cfg.modules.phishing && A.isContextValid()) {
+      try {
+        const res = await chrome.runtime.sendMessage({ type: 'GET_CURRENT_TAB_SECURITY', url: location.href });
+        if (res?.isOfficialWhitelist) st.isOfficialWhitelist = true;
+        if (res?.risk === 'danger') {
+          A.renderPhishingOverlay(res.host || st.hostname, res.reasons || []);
+        }
+      } catch {}
     }
 
     if (!cfg.enabled) return;
 
-    A.injectAdblockCSS();
     await A.applyUserAdBase();
-    if (st.isWhitelisted) return;
 
     if (window.top === window.self) {
-      A.guardClickjacking();
-      A.checkHttpDowngrade();
+      if (cfg.modules.clickjacking) A.guardClickjacking();
+      if (!st.isWhitelisted) A.checkHttpDowngrade();
       A.scheduleMetrics();
     }
 
-    A.scanStaticCssHiddenAds();
-    A.hideNativeAds();
-    A.hideAdIframes();
-    A.smartScanAds();
-    A.startAdObserver();
-    A.scanPagePhishingHeuristics();
+    if (cfg.modules.ads) {
+      runAdblockPass();
+    }
+    if (cfg.modules.phishing) {
+      A.scanPagePhishingHeuristics();
+    }
 
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
-        A.analyzeDomAds();
-        A.scanPagePhishingHeuristics();
+        if (A.state.runtimeCfg.modules.ads) A.analyzeDomAds();
+        if (A.state.runtimeCfg.modules.phishing) A.scanPagePhishingHeuristics();
       }, { once: true });
-    } else {
-      A.analyzeDomAds();
     }
 
-    new MutationObserver(A.analyzeDomAds).observe(document.documentElement, { childList: true, subtree: true });
+    const debouncedHeuristics = A.debounce(() => {
+      if (A.state.runtimeCfg.modules.phishing) A.scanPagePhishingHeuristics();
+    }, 500);
+    new MutationObserver(() => {
+      if (A.state.runtimeCfg.modules.ads) A.analyzeDomAds();
+      debouncedHeuristics();
+    }).observe(document.documentElement, { childList: true, subtree: true });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });

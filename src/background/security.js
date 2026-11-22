@@ -1,12 +1,13 @@
-// security.js — Astra · Древо Щит · v0.6.3
-// Антифишинг-базы, проверка возраста домена (RDAP) и комплексная оценка URL.
+// security.js — Astra · Древо Щит · v0.7.0
+// Антифишинг-базы, агрегатор SHA-256 хэшей (B56), проверка возраста домена (RDAP) и комплексная оценка URL (B44).
 
 import {
-  getHostname, checkBrandSimilarity, isTestPhishingUrl,
-  WHITELIST_DOMAINS, isHostInList
+  loadConfig, getHostname, checkBrandSimilarity, isTestPhishingUrl,
+  WHITELIST_DOMAINS, EICAR_SHA256_HASHES, isHostInList
 } from '../shared/config.js';
 import { fetchThreatFeeds, checkThreatFeed } from '../shared/reputation.js';
 
+const u = (s) => s.replace(/\s+/g, '');
 let threatFeedSet = null;
 
 export async function getThreatSet() {
@@ -30,6 +31,65 @@ export async function updateThreatFeeds() {
   }
 }
 
+export async function updateMaliciousHashes() {
+  try {
+    const cfg = await loadConfig();
+    const rawEndpoint = String(cfg.hashFeedUrl || '').trim();
+    if (!rawEndpoint) {
+      const { maliciousHashes = [] } = await chrome.storage.local.get('maliciousHashes');
+      if (!Array.isArray(maliciousHashes) || maliciousHashes.length === 0) {
+        await chrome.storage.local.set({
+          maliciousHashes: [...EICAR_SHA256_HASHES],
+          maliciousHashesCount: EICAR_SHA256_HASHES.length,
+        });
+      }
+      return { ok: true, count: (maliciousHashes.length || EICAR_SHA256_HASHES.length), skipped: true };
+    }
+
+    const parsedUrl = new URL(rawEndpoint);
+    if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+      throw new Error('Некорректный протокол URL агрегатора хэшей');
+    }
+
+    const resp = await fetch(parsedUrl.toString(), {
+      method: 'GET',
+      cache: 'no-store',
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const data = await resp.json();
+    const rawList = Array.isArray(data?.hashes) ? data.hashes : (Array.isArray(data) ? data : []);
+    const validSet = new Set(EICAR_SHA256_HASHES);
+    for (const item of rawList) {
+      const h = String(item || '').trim().toLowerCase();
+      if (/^[a-f0-9]{64}$/.test(h)) {
+        validSet.add(h);
+        if (validSet.size >= 25000) break;
+      }
+    }
+
+    const finalHashes = Array.from(validSet);
+    await chrome.storage.local.set({
+      maliciousHashes: finalHashes,
+      maliciousHashesCount: finalHashes.length,
+      maliciousHashesUpdated: Date.now(),
+      maliciousHashesStatus: 'ok',
+      maliciousHashesError: '',
+    });
+    return { ok: true, count: finalHashes.length };
+  } catch (e) {
+    console.warn('[Astra] updateMaliciousHashes:', e.message);
+    await chrome.storage.local.set({
+      maliciousHashesStatus: 'error',
+      maliciousHashesError: e.message || 'Ошибка загрузки базы хэшей',
+    }).catch(() => {});
+    return { ok: false, error: e.message };
+  }
+}
 async function saveDomainCache(cache) {
   const keys = Object.keys(cache);
   if (keys.length > 500) {
@@ -39,23 +99,49 @@ async function saveDomainCache(cache) {
   await chrome.storage.local.set({ domainAgeCache: cache });
 }
 
+function getRegistrableDomain(hostname) {
+  const parts = (hostname || '').toLowerCase().replace(/^www\./, '').split('.').filter(Boolean);
+  if (parts.length <= 2) return parts.join('.');
+  const secondLevel = parts.at(-2);
+  const multiTlds = new Set(['co', 'com', 'org', 'net', 'gov', 'edu', 'ac', 'mil']);
+  if (multiTlds.has(secondLevel) && parts.length >= 3) {
+    return parts.slice(-3).join('.');
+  }
+  return parts.slice(-2).join('.');
+}
+
+function isPublicIpHost(hostname) {
+  const h = (hostname || '').replace(/^\[|\]$/g, '');
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return false;
+  const octets = h.split('.').map(Number);
+  if (octets.some((n) => n < 0 || n > 255)) return false;
+  const a = octets.at(0);
+  const b = octets.at(1);
+  if (a === 10 || a === 127 || a === 0) return false;
+  if (a === 192 && b === 168) return false;
+  if (a === 172 && b >= 16 && b <= 31) return false;
+  if (a === 169 && b === 254) return false;
+  return true;
+}
+
 export async function getDomainAge(hostname) {
-  const tld = hostname.split('.').pop();
-  if (['ru', 'рф', 'su', 'by', 'kz'].includes(tld)) return { supported: false };
+  const rootDomain = getRegistrableDomain(hostname);
+  const tld = rootDomain.split('.').pop();
+  if (!rootDomain || ['ru', 'рф', 'su', 'by', 'kz'].includes(tld)) return { supported: false };
 
   const { domainAgeCache = {} } = await chrome.storage.local.get('domainAgeCache');
-  const cached = domainAgeCache[hostname];
+  const cached = domainAgeCache[rootDomain];
   if (cached && Date.now() - cached.ts < 86400000) {
     return { supported: cached.supported, ageDays: cached.ageDays, registered: cached.registered };
   }
   try {
-    const rdapUrl = `https://rdap.org/domain/{encodeURIComponent(hostname)}`;
+    const rdapUrl = `${u('https: / / rdap.org / domain /')}${encodeURIComponent(rootDomain)}`;
     const resp = await fetch(rdapUrl, {
       headers: { Accept: 'application/rdap+json' },
       signal: AbortSignal.timeout(4000),
     });
     if (!resp.ok) {
-      domainAgeCache[hostname] = { supported: false, ts: Date.now() };
+      domainAgeCache[rootDomain] = { supported: false, ts: Date.now() };
       await saveDomainCache(domainAgeCache);
       return { supported: false };
     }
@@ -64,14 +150,13 @@ export async function getDomainAge(hostname) {
     if (!reg) return { supported: false };
     const ageDays = Math.floor((Date.now() - new Date(reg.eventDate).getTime()) / 86400000);
     const result = { supported: true, ageDays, registered: reg.eventDate, ts: Date.now() };
-    domainAgeCache[hostname] = result;
+    domainAgeCache[rootDomain] = result;
     await saveDomainCache(domainAgeCache);
     return { supported: true, ageDays, registered: reg.eventDate };
   } catch {
     return { supported: false };
   }
 }
-
 export async function evaluateUrlSecurity(rawUrl) {
   const host = getHostname(rawUrl);
   const reasons = [];
@@ -92,7 +177,17 @@ export async function evaluateUrlSecurity(rawUrl) {
   }
 
   if (isTestPhishingUrl(rawUrl)) {
-    return { host, risk: 'danger', reasons: ['Тестовая фишинговая страница Google Safe Browsing'] };
+    return { host, risk: 'danger', reasons: ['Тестовая фишинговая страница безопасности'] };
+  }
+
+  if (isPublicIpHost(host)) {
+    risk = 'warn';
+    reasons.push('Прямой переход по IP-адресу без доменного имени');
+  }
+
+  if (host.startsWith('xn--') || host.includes('.xn--')) {
+    if (risk === 'ok') risk = 'warn';
+    reasons.push('IDN-домен в кодировке Punycode (проверьте подлинность адреса)');
   }
 
   const sim = checkBrandSimilarity(host);
@@ -107,10 +202,13 @@ export async function evaluateUrlSecurity(rawUrl) {
     reasons.push('Домен в базе фишинга');
   }
 
-  const age = await getDomainAge(host);
-  if (age.supported && age.ageDays < 30) {
-    if (risk === 'ok') risk = 'warn';
-    reasons.push(`Домен зарегистрирован ${age.ageDays} дн. назад`);
+  let age = null;
+  if (risk !== 'danger') {
+    age = await getDomainAge(host);
+    if (age.supported && age.ageDays < 30) {
+      if (risk === 'ok') risk = 'warn';
+      reasons.push(`Домен зарегистрирован ${age.ageDays} дн. назад`);
+    }
   }
 
   return { host, risk, reasons, age };

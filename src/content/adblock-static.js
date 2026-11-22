@@ -1,11 +1,11 @@
-/* adblock-dom.js — Astra · Древо Щит · v0.6.3
-   DOM-блокировка рекламы: CSS-фильтры, эвристика баннеров, обход обфускации Mail.ru/VK и Ghostery.
+/* adblock-static.js — Astra · Древо Щит · v0.7.0
+   Статическая DOM-блокировка рекламы: CSS-фильтры, обход обфускации Mail.ru/VK/4PDA, нативные пометки и рекламные iframe.
 */
 (() => {
   'use strict';
   const A = (window.AstraShield = window.AstraShield || {});
-  if (A.adblockDomLoaded) return;
-  A.adblockDomLoaded = true;
+  if (A.adblockStaticLoaded) return;
+  A.adblockStaticLoaded = true;
 
   A.injectAdblockCSS = () => {
     const st = A.state;
@@ -50,8 +50,8 @@
     '[class*="directadvert"]', '[class*="teaser-block"]', '[class*="teaser_block"]', '[class*="teasers-widget"]', '[class*="feed-ad"]',
     '[id*="nativeroll"]', '[class*="nativeroll"]', '[id*="videonow"]', '[class*="videonow"]',
     '[class*="seedr-"]', '[class*="outstream-ad"]', '[class*="sticky-ad"]', '[class*="floating-banner"]',
-    '[class*="advert"]', '[class*="advertisement"]', '[class*="adsbygoogle"]',
-    '[class*="google-ads"]', '[class*="sponsored"]',
+    '[class^="advert-"]', '[class*=" advert-"]', '[class*="advertisement"]', '[class*="adsbygoogle"]',
+    '[class*="google-ads"]', '[class^="sponsored-"]', '[class*=" sponsored-"]',
   ];
 
   A.scanStaticCssHiddenAds = () => {
@@ -73,14 +73,6 @@
     }
   };
   const AD_LABEL_MAX = 48;
-  const AD_SIZE_PATTERNS = [
-    new Array(300, 250), new Array(728, 90), new Array(160, 600),
-    new Array(300, 600), new Array(320, 50), new Array(970, 90),
-    new Array(970, 250), new Array(300, 50), new Array(336, 280),
-    new Array(234, 60), new Array(250, 250), new Array(200, 200),
-    new Array(468, 60), new Array(120, 600), new Array(160, 600),
-  ];
-
   const AD_HOST_PATTERNS = [
     'doubleclick' + '.net', 'googlesyndication' + '.com',
     'googleadservices' + '.com', 'adservice.google' + '.com',
@@ -94,6 +86,7 @@
     'marketgid' + '.com', 'mgid' + '.com', 'directadvert' + '.ru',
     'nativeroll' + '.tv', 'videonow' + '.ru', 'seedr' + '.ru',
   ];
+
   const CARD_HINT_RE = /(?:^|[-_])(?:card|teaser|feed|item|tile|article|banner|advert|promo|native|snippet|adv)(?:[-_]|$)/i;
 
   function looksLikeAdLabel(text) {
@@ -103,26 +96,6 @@
     if (/^erid/.test(t) && t.length <= 60) return true;
     if (/^(ad|ads|advert|advertisement|sponsored|adchoices)$/.test(t)) return true;
     return false;
-  }
-
-  function scoreAdCandidate(el) {
-    let score = 0;
-    const cls = A.safeClassName(el);
-    const id = el.id || '';
-    const w = el.offsetWidth, h = el.offsetHeight;
-    if (AD_SIZE_PATTERNS.some(([pw, ph]) => Math.abs(w - pw) < 5 && Math.abs(h - ph) < 5)) score += 30;
-    if (/(?:^|[-_])(?:ad|adv|banner|promo|sponsor|native|teaser)(?:[-_]|$)/i.test(cls + ' ' + id)) score += 25;
-    if (el.querySelector?.('iframe[src*="doubleclick"], iframe[src*="googlesyndication"], iframe[src*="yabs.yandex"], iframe[src*="adfox"], iframe[src*="adriver"], iframe[src*="smi2"], iframe[src*="mgid"], iframe[src*="nativeroll"]')) score += 25;
-    if (el.tagName === 'IFRAME' && AD_SIZE_PATTERNS.some(([pw, ph]) => Math.abs(w - pw) < 5 && Math.abs(h - ph) < 5)) score += 20;
-    if (el.matches?.('[data-erid],[data-ad],[data-ad-click],[data-banner-id],[data-ad_id],[data-adv],[data-adv-id],[data-rtb],[data-teaser]')) score += 35;
-    if (el.querySelector?.('a[href*="erid"], a[href*="adriver"], a[href*="utm_source=ad"], a[href*="utm_medium=cpc"]')) score += 15;
-
-    const text = A.norm((el.textContent || '').slice(0, 100));
-    if (/\b(реклама|sponsored|advert|erid)\b/i.test(text)) score += 15;
-
-    const st = getComputedStyle(el);
-    if (st.position === 'fixed' && parseInt(st.zIndex || '0', 10) > 999) score += 10;
-    return score;
   }
 
   function findCard(el, maxDepth = 8) {
@@ -144,6 +117,7 @@
     }
     return null;
   }
+
   function hideObfuscatedMailruAds() {
     const h = A.state.hostname;
     if (h !== 'mail.ru' && !h.endsWith('.mail.ru')) return 0;
@@ -201,11 +175,153 @@
 
     return hidden;
   }
+  function isRandomCustomTag(el) {
+    if (!el || !el.tagName) return false;
+    const t = el.tagName;
+    if (t.includes('-')) return false;
+    return t.length >= 8 && /^[A-Z0-9]+$/.test(t);
+  }
+
+  function cleanCssRuleList(ruleList) {
+    let removed = 0;
+    if (!ruleList) return 0;
+    for (let i = ruleList.length - 1; i >= 0; i--) {
+      const r = ruleList[i];
+      if (r.cssRules) {
+        removed += cleanCssRuleList(r.cssRules);
+        continue;
+      }
+      const txt = r.cssText || '';
+      const sel = (r.selectorText || '').trim();
+      if (/^(?:html|body)\b/i.test(sel) && (/\/s\/[a-z0-9_-]{8,}\./i.test(txt) || /no-repeat\s*!important/i.test(txt))) {
+        try {
+          (r.parentRule || r.parentStyleSheet)?.deleteRule(i);
+          removed++;
+        } catch {}
+      }
+    }
+    return removed;
+  }
+
+  let astra4pdaAdoptedSheet = null;
+
+  function apply4pdaAdoptedOverride() {
+    let removed = 0;
+    try {
+      const current = Array.isArray(document.adoptedStyleSheets) ? document.adoptedStyleSheets : [];
+      for (const sheet of current) {
+        if (sheet === astra4pdaAdoptedSheet) continue;
+        try {
+          removed += cleanCssRuleList(sheet.cssRules);
+        } catch {}
+      }
+      if (!astra4pdaAdoptedSheet) {
+        astra4pdaAdoptedSheet = new CSSStyleSheet();
+        astra4pdaAdoptedSheet.replaceSync(
+          ':root:root:root:root:root:root:root:root html, :root:root:root:root:root:root:root:root body { background: #141518 none !important; background-image: none !important; margin-top: 0 !important; padding-top: 0 !important; } ' +
+          ':root:root:root:root:root:root:root:root html::before, :root:root:root:root:root:root:root:root html::after, :root:root:root:root:root:root:root:root body::before, :root:root:root:root:root:root:root:root body::after { content: none !important; display: none !important; background: none !important; }'
+        );
+      }
+      const filtered = current.filter((s) => s !== astra4pdaAdoptedSheet);
+      document.adoptedStyleSheets = [...filtered, astra4pdaAdoptedSheet];
+    } catch {}
+    return removed;
+  }
+
+  function hide4pdaFirstPartyAds() {
+    const h = A.state.hostname;
+    if (h !== '4pda.to' && !h.endsWith('.4pda.to') && h !== '4pda.ws' && !h.endsWith('.4pda.ws')) return 0;
+    let hidden = apply4pdaAdoptedOverride();
+
+    try {
+      for (const sheet of Array.from(document.styleSheets || [])) {
+        let rules;
+        try { rules = sheet.cssRules; } catch { continue; }
+        hidden += cleanCssRuleList(rules);
+      }
+    } catch {}
+
+    document.getElementById('astra-4pda-fix')?.remove();
+    const fix = document.createElement('style');
+    fix.id = 'astra-4pda-fix';
+    fix.textContent =
+      ':root:root:root:root:root:root:root:root html, :root:root:root:root:root:root:root:root body { background: #141518 none !important; background-image: none !important; margin-top: 0 !important; padding-top: 0 !important; } ' +
+      ':root:root:root:root:root:root:root:root html::before, :root:root:root:root:root:root:root:root html::after, :root:root:root:root:root:root:root:root body::before, :root:root:root:root:root:root:root:root body::after { content: none !important; display: none !important; background: none !important; }';
+    (document.documentElement || document.head).appendChild(fix);
+
+    document.querySelectorAll('body > *').forEach((el) => {
+      if (A.PROTECTED_TAGS.has(el.tagName) || el.dataset?.astraHidden) return;
+      if (el.id === 'lightboxoverlay' || el.id === 'lightbox' || el.classList?.contains('mistakes')) return;
+      if (el.querySelector('article, main, nav, header, footer, form, input')) return;
+      if ((el.textContent || '').trim().length === 0) {
+        if (A.hideNode(el, '4pda-side-wallpaper')) hidden++;
+      }
+    });
+
+    document.querySelectorAll('style').forEach((stEl) => {
+      if (stEl.id === 'astra-4pda-fix') return;
+      const css = stEl.textContent || '';
+      if (/^[a-z0-9]{8,}_\d+$/i.test(stEl.id || '') || (/body\./i.test(css) && /\/s\/[a-z0-9_-]{8,}\./i.test(css)) || /margin-top\s*:\s*\d{2,3}px\s*!important/i.test(css)) {
+        stEl.textContent = '';
+        stEl.remove();
+        hidden++;
+      }
+    });
+
+    document.querySelectorAll('article.post, [itemtype*="schema.org/Article"]').forEach((art) => {
+      if (art.dataset.astraHidden) return;
+      const hasGifPixel = !!art.querySelector('img[src*="/s/"][src$=".gif"]');
+      const hasMetaPanel = !!art.querySelector('.v-panel, [class*="date"], time');
+      const hasPromoAttr = Array.from(art.querySelectorAll('div')).some((d) =>
+        Array.from(d.attributes).some((attr) => /^data-[a-z0-9]{10,}$/i.test(attr.name))
+      );
+
+      if (hasGifPixel || (!hasMetaPanel && hasPromoAttr)) {
+        let target = art;
+        const p = art.parentElement;
+        if (p && isRandomCustomTag(p) && p.querySelectorAll('article').length <= 1) {
+          target = p;
+        }
+        if (A.hideNode(target, '4pda-promo-article')) hidden++;
+      }
+    });
+
+    document.querySelectorAll('img[src*="/s/"], iframe[src*="/s/"]').forEach((media) => {
+      if (media.dataset?.astraHidden || media.closest('[data-astra-hidden="1"]')) return;
+      if (media.closest('article, [itemtype*="Article"], .post, header, nav, footer')) return;
+      const src = media.getAttribute('src') || '';
+      if (!/\/s\/[a-z0-9_-]{12,}\.(?:jpg|jpeg|png|gif|webp|html)/i.test(src)) return;
+
+      let box = media;
+      let cur = media.parentElement;
+      for (let i = 0; i < 6 && cur && cur !== document.body; i++) {
+        if (A.PROTECTED_TAGS.has(cur.tagName)) break;
+        if (cur.querySelector('article, main, nav, header, footer, h1, h2')) break;
+        if (cur.classList?.contains('holder-no-fudder')) break;
+        if ((cur.textContent || '').trim().length > 80) break;
+        box = cur;
+        cur = cur.parentElement;
+      }
+      if (box && A.hideNode(box, '4pda-banner-slot')) hidden++;
+    });
+
+    return hidden;
+  }
+
+  if (/(?:^|\.)4pda\.(?:to|ws)$/i.test(location.hostname)) {
+    const run4pda = () => {
+      if (!A.state?.isWhitelisted && A.state?.runtimeCfg?.enabled && A.state?.runtimeCfg?.modules?.ads) {
+        hide4pdaFirstPartyAds();
+      }
+    };
+    document.addEventListener('DOMContentLoaded', run4pda, { once: true });
+    window.addEventListener('load', run4pda, { once: true });
+  }
 
   A.hideNativeAds = () => {
     const st = A.state;
     if (st.isWhitelisted || !st.runtimeCfg.enabled || !st.runtimeCfg.modules.ads) return 0;
-    let hidden = hideObfuscatedMailruAds();
+    let hidden = hideObfuscatedMailruAds() + hide4pdaFirstPartyAds();
 
     document.querySelectorAll('[id^="yandex_rtb"], [id*="yandex_rtb"], [class*="yandex-rtb"], [id^="adfox"], [id^="AdFox"], [id*="MarketGid"], [id*="MGID"], [id^="smi2"], [data-erid], [data-rtb]').forEach(el => {
       if (A.hideNode(el, 'yandex-direct-ad')) hidden++;
@@ -241,6 +357,16 @@
     });
     return hidden;
   };
+
+  function isCompactAdWrapper(parent) {
+    if (!parent || A.PROTECTED_TAGS.has(parent.tagName)) return false;
+    if (parent === document.body || parent === document.documentElement) return false;
+    if (parent.querySelector('article, main, nav, header, footer')) return false;
+    if (parent.children.length > 2) return false;
+    if ((parent.textContent || '').trim().length > 150) return false;
+    return true;
+  }
+
   A.hideAdIframes = () => {
     const st = A.state;
     if (st.isWhitelisted || !st.runtimeCfg.enabled || !st.runtimeCfg.modules.ads) return 0;
@@ -253,169 +379,11 @@
       const lower = src.toLowerCase();
       if (AD_HOST_PATTERNS.some((h) => lower.includes(h))) {
         if (A.hideNode(fr, 'ad-iframe')) hidden++;
-        if (fr.parentElement && !A.PROTECTED_TAGS.has(fr.parentElement.tagName)) {
+        if (isCompactAdWrapper(fr.parentElement)) {
           A.hideNode(fr.parentElement, 'iframe-parent');
         }
       }
     });
     return hidden;
-  };
-
-  A.smartScanAds = () => {
-    const st = A.state;
-    if (st.isWhitelisted || !st.runtimeCfg.enabled || !st.runtimeCfg.modules.ads) return 0;
-    let hidden = 0;
-    const candidates = new Set();
-    document.querySelectorAll('div, aside, section, article, iframe, [data-testid], [class*="banner"], [class*="advert"], [class*="promo"], [class*="sponsor"], [class*="teaser"]').forEach((el) => {
-      if (el.dataset.astraHidden || A.PROTECTED_TAGS.has(el.tagName)) return;
-      if (el.offsetWidth < 100 || el.offsetHeight < 50) return;
-      if (el.offsetWidth > 4000 || el.offsetHeight > 2500) return;
-      if (el.textContent && el.textContent.length > 4000) return;
-      candidates.add(el);
-    });
-
-    candidates.forEach((el) => {
-      const score = scoreAdCandidate(el);
-      if (score >= 60 && A.hideNode(el, `smart-score:${score}`)) hidden++;
-    });
-
-    document.querySelectorAll('div:empty, aside:empty, section:empty').forEach((el) => {
-      if (el.dataset.astraHidden || A.PROTECTED_TAGS.has(el.tagName)) return;
-      const w = el.offsetWidth, h = el.offsetHeight;
-      if (w > 100 && h > 50) {
-        const cls = A.safeClassName(el).toLowerCase();
-        if (/ad|banner|promo|sponsor|teaser|native/i.test(cls) || AD_SIZE_PATTERNS.some(([pw, ph]) => Math.abs(w - pw) < 5 && Math.abs(h - ph) < 5)) {
-          if (A.hideNode(el, 'empty-ad-container')) hidden++;
-        }
-      }
-    });
-    return hidden;
-  };
-
-  // ============================================================
-  // 🕵️‍♂️ GHOSTERY BLOCKER + ANALYZER
-  // ============================================================
-  function collectPageFeatures() {
-    const ids = new Set();
-    const classes = new Set();
-    const hrefs = new Set();
-
-    document.querySelectorAll('*').forEach(el => {
-      if (el.id) ids.add(el.id);
-      el.classList.forEach(c => classes.add(c));
-    });
-
-    document.querySelectorAll('a[href]').forEach(a => {
-      const h = a.getAttribute('href');
-      if (h && !h.startsWith('#') && !h.startsWith('javascript:')) {
-        hrefs.add(a.href || h);
-      }
-    });
-
-    return {
-      ids: Array.from(ids),
-      classes: Array.from(classes),
-      hrefs: Array.from(hrefs).slice(0, 500),
-    };
-  }
-
-  function splitCssSelectors(selectorGroup) {
-    const result = [];
-    let depthParen = 0;
-    let depthBracket = 0;
-    let current = '';
-
-    for (let i = 0; i < selectorGroup.length; i++) {
-      const ch = selectorGroup[i];
-      if (ch === '(') depthParen++;
-      else if (ch === ')') depthParen = Math.max(0, depthParen - 1);
-      else if (ch === '[') depthBracket++;
-      else if (ch === ']') depthBracket = Math.max(0, depthBracket - 1);
-
-      if (ch === ',' && depthParen === 0 && depthBracket === 0) {
-        const trimmed = current.trim();
-        if (trimmed) result.push(trimmed);
-        current = '';
-      } else {
-        current += ch;
-      }
-    }
-    const last = current.trim();
-    if (last) result.push(last);
-    return result;
-  }
-
-  function parseGhosterySelectors(cssText) {
-    const selectors = new Set();
-    const rules = cssText.split('}');
-    for (const rule of rules) {
-      const braceIdx = rule.indexOf('{');
-      if (braceIdx === -1) continue;
-      const body = rule.slice(braceIdx + 1).toLowerCase().replace(/\s+/g, '');
-      if (!body.includes('display:none') && !body.includes('visibility:hidden')) continue;
-
-      const header = rule.slice(0, braceIdx).trim();
-      if (!header || header.startsWith('@')) continue;
-
-      for (const sel of splitCssSelectors(header)) {
-        if (!sel.includes('::')) selectors.add(sel);
-      }
-    }
-    return Array.from(selectors);
-  }
-
-  A.analyzeDomAds = A.debounce(async () => {
-    const st = A.state;
-    if (st.isWhitelisted || !st.runtimeCfg.enabled || !st.runtimeCfg.modules.ads) return;
-    if (!A.isContextValid()) return;
-
-    const { ids, classes, hrefs } = collectPageFeatures();
-    if (ids.length === 0 && classes.length === 0 && hrefs.length === 0) return;
-
-    try {
-      const resp = await new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage({ type: 'GET_COSMETIC_FILTERS', url: location.href, ids, classes, hrefs }, (response) => {
-          if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-          else resolve(response);
-        });
-      });
-
-      if (!resp || !resp.styles) return;
-
-      const selectors = parseGhosterySelectors(resp.styles);
-      for (const selector of selectors) {
-        try {
-          document.querySelectorAll(selector).forEach(el => {
-            A.hideNode(el, 'ghostery', selector);
-          });
-        } catch {}
-      }
-
-      let styleEl = document.getElementById('astra-ghostery-style');
-      if (!styleEl) {
-        styleEl = document.createElement('style');
-        styleEl.id = 'astra-ghostery-style';
-        (document.head || document.documentElement).appendChild(styleEl);
-      }
-      styleEl.textContent = resp.styles;
-    } catch (e) {
-      if (e.message && e.message.includes('Extension context invalidated')) return;
-    }
-  }, 2500);
-
-  let observerStarted = false;
-  A.startAdObserver = () => {
-    if (A.state.isWhitelisted || observerStarted) return;
-    observerStarted = true;
-    const run = A.debounce(() => {
-      const cfg = A.state.runtimeCfg;
-      if (!cfg.enabled || !cfg.modules.ads) return;
-      A.scanStaticCssHiddenAds();
-      A.hideNativeAds();
-      A.hideAdIframes();
-      A.smartScanAds();
-    }, 350);
-    new MutationObserver(run).observe(document.documentElement, { childList: true, subtree: true });
-    new Array(400, 1200, 2500, 6000).forEach((ms) => setTimeout(run, ms));
   };
 })();

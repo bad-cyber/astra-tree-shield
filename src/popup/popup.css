@@ -1,4 +1,4 @@
-/* popup.css — Astra · Древо Щит · v0.6.1 */
+/* popup.css — Astra · Древо Щит · v0.7.1 */
 body { width: 360px; min-height: 480px; font-size: 13px; }
 .popup-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--border); background: var(--bg-soft); }
 .brand { display: flex; align-items: center; gap: 8px; }
@@ -16,9 +16,50 @@ body { width: 360px; min-height: 480px; font-size: 13px; }
 .status-host { font-size: 11px; color: var(--text-soft); word-break: break-all; }
 
 .toggles { padding: 0 12px; }
+.toggles-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+.toggles-scope {
+  color: var(--text-soft);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reset-site-btn {
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: 0.15s;
+}
+.reset-site-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+[data-theme="dark"] .reset-site-btn:hover, [data-theme="night-shield"] .reset-site-btn:hover { color: #1a2536; }
+
 .switch-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--border); cursor: pointer; }
 .switch-row:last-child { border-bottom: none; }
 .switch-row input { accent-color: var(--accent); width: 34px; height: 18px; }
+.switch-row.overridden > span { color: var(--accent); font-weight: 600; }
+.switch-row.overridden > span::after {
+  content: " •";
+  color: var(--accent);
+  font-weight: 700;
+}
 
 .popup-foot { padding: 12px 14px; border-top: 1px solid var(--border); background: var(--bg-soft); margin-top: 12px; }
 .stats { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-soft); margin-bottom: 6px; }

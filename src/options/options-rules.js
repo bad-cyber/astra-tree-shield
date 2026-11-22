@@ -1,6 +1,7 @@
-/* options-rules.js — Astra · Древо Щит · v0.6.3
-   Управление пользовательскими правилами (Ad DNA, белый и чёрный списки, импорт/экспорт).
+/* options-rules.js — Astra · Древо Щит · v0.7.2
+   Управление пользовательскими правилами (siteOverrides, Ad DNA, белый и чёрный списки, импорт/экспорт).
 */
+import { DEFAULTS, loadConfig, saveConfig } from "../shared/config.js";
 import {
   $,
   escapeHtml,
@@ -9,6 +10,19 @@ import {
   isValidCssSelector,
   notifyTabsBaseUpdated
 } from "./options-utils.js";
+
+const MODULE_LABELS = {
+  phishing: "Антифишинг",
+  ads: "Реклама",
+  miners: "Майнеры",
+  downloads: "Проверка загрузок",
+  clickjacking: "Кликджекинг",
+  popunder: "Pop-Under",
+  antiFingerprint: "Anti-Fingerprint",
+  visibilitySpoof: "Анти-пауза видео",
+  webrtcShield: "WebRTC IP",
+  blockDownloads: "Блок загрузок",
+};
 
 let editingAdIndex = -1;
 
@@ -24,6 +38,25 @@ export function showRuleFeedback(msg, isError = false) {
   }
 }
 
+function sanitizeOverridesMap(rawMap) {
+  if (!rawMap || typeof rawMap !== "object" || Array.isArray(rawMap)) return {};
+  const allowedKeys = Object.keys(DEFAULTS.modules);
+  const cleanMap = {};
+  for (const [rawHost, mods] of Object.entries(rawMap)) {
+    const host = normalizeHostInput(rawHost);
+    if (!host || host === "*" || !mods || typeof mods !== "object" || Array.isArray(mods)) continue;
+    const entry = {};
+    for (const k of allowedKeys) {
+      if (typeof mods[k] === "boolean") {
+        entry[k] = mods[k];
+      }
+    }
+    if (Object.keys(entry).length > 0) {
+      cleanMap[host] = entry;
+    }
+  }
+  return cleanMap;
+}
 export async function mergeImportedUserRules(payload) {
   const cur = await chrome.storage.local.get(["astraUserAdBase", "userWhitelist", "userBlocklist"]);
   const nextAdBase = [...(cur.astraUserAdBase || [])];
@@ -62,7 +95,6 @@ export async function mergeImportedUserRules(payload) {
       }
     }
   }
-
   if (Array.isArray(payload.userBlocklist)) {
     for (const h of payload.userBlocklist) {
       const clean = normalizeHostInput(h);
@@ -71,6 +103,24 @@ export async function mergeImportedUserRules(payload) {
         nextWL.delete(clean);
         addedCount++;
       }
+    }
+  }
+
+  const importedOverrides = sanitizeOverridesMap(payload.siteOverrides);
+  const overrideHosts = Object.keys(importedOverrides);
+  if (overrideHosts.length > 0) {
+    const cfg = await loadConfig();
+    const patchOverrides = {};
+    for (const host of overrideHosts) {
+      const existing = cfg.siteOverrides?.[host] || {};
+      const merged = { ...existing, ...importedOverrides[host] };
+      if (JSON.stringify(existing) !== JSON.stringify(merged)) {
+        patchOverrides[host] = merged;
+        addedCount++;
+      }
+    }
+    if (Object.keys(patchOverrides).length > 0) {
+      await saveConfig({ siteOverrides: patchOverrides });
     }
   }
 
@@ -83,13 +133,66 @@ export async function mergeImportedUserRules(payload) {
   await notifyTabsBaseUpdated();
   return addedCount;
 }
-export async function renderUserRules() {
-  const {
-    astraUserAdBase = [],
-    userWhitelist = [],
-    userBlocklist = []
-  } = await chrome.storage.local.get(["astraUserAdBase", "userWhitelist", "userBlocklist"]);
+function formatOverrideBadges(mods) {
+  if (!mods || typeof mods !== "object") return "";
+  const badges = [];
+  for (const [key, val] of Object.entries(mods)) {
+    if (typeof val !== "boolean") continue;
+    const label = MODULE_LABELS[key] || key;
+    const stateText = val ? "Вкл" : "Выкл";
+    const bg = val ? "rgba(67, 160, 71, 0.16)" : "rgba(229, 57, 53, 0.16)";
+    const color = val ? "var(--ok, #43a047)" : "var(--danger, #e53935)";
+    badges.push(
+      `<span style="display:inline-block;padding:2px 7px;border-radius:6px;font-size:11px;background:${bg};color:${color};margin:2px 4px 0 0;">${escapeHtml(label)}: ${stateText}</span>`
+    );
+  }
+  return badges.join("");
+}
 
+export async function renderUserRules() {
+  const [localData, cfg] = await Promise.all([
+    chrome.storage.local.get(["astraUserAdBase", "userWhitelist", "userBlocklist"]),
+    loadConfig()
+  ]);
+  const astraUserAdBase = localData.astraUserAdBase || [];
+  const userWhitelist = localData.userWhitelist || [];
+  const userBlocklist = localData.userBlocklist || [];
+  const siteOverrides = cfg.siteOverrides || {};
+
+  // 0. Индивидуальные настройки сайтов (siteOverrides)
+  const overridesList = $("#siteOverridesList");
+  const overridesCount = $("#siteOverridesCount");
+  const overrideHosts = Object.keys(siteOverrides).sort();
+  if (overridesCount) overridesCount.textContent = overrideHosts.length;
+  if (overridesList) {
+    overridesList.innerHTML = "";
+    if (overrideHosts.length === 0) {
+      overridesList.innerHTML = `<li style="color:var(--text-soft);font-size:13px;">Индивидуальных настроек для отдельных сайтов пока нет. Откройте попап Astra на нужном сайте и переключите любой модуль.</li>`;
+    } else {
+      overrideHosts.forEach((host) => {
+        const li = document.createElement("li");
+        li.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);font-size:13px;";
+        li.innerHTML = `
+          <div style="min-width:0;flex:1;">
+            <div style="font-weight:600;color:var(--text);">${escapeHtml(host)}</div>
+            <div style="margin-top:4px;">${formatOverrideBadges(siteOverrides[host])}</div>
+          </div>
+          <button data-del-override="${escapeHtml(host)}" class="btn" style="padding:4px 10px;font-size:12px;flex-shrink:0;">Сбросить</button>
+        `;
+        overridesList.appendChild(li);
+      });
+
+      overridesList.querySelectorAll("button[data-del-override]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const target = btn.dataset.delOverride;
+          await saveConfig({ siteOverrides: { [target]: null } });
+          await notifyTabsBaseUpdated();
+          showRuleFeedback(`Индивидуальные настройки для ${target} сброшены.`);
+          renderUserRules();
+        });
+      });
+    }
+  }
   // 1. Ручные блокировки рекламы
   const userAdList = $("#userAdList");
   const userAdCount = $("#userAdCount");
@@ -214,8 +317,7 @@ export async function renderUserRules() {
       wlList.querySelectorAll("button[data-del-wl]").forEach(btn => {
         btn.addEventListener("click", async () => {
           const target = btn.dataset.delWl;
-          const updated = userWhitelist.filter(h => h !== target);
-          await chrome.storage.local.set({ userWhitelist: updated });
+          await chrome.runtime.sendMessage({ type: "TOGGLE_WHITELIST", host: target }).catch(() => {});
           renderUserRules();
         });
       });
@@ -244,7 +346,7 @@ export async function renderUserRules() {
       blList.querySelectorAll("button[data-del-bl]").forEach(btn => {
         btn.addEventListener("click", async () => {
           const target = btn.dataset.delBl;
-          await chrome.runtime.sendMessage({ type: "TOGGLE_BLOCK_SITE", host: target });
+          await chrome.runtime.sendMessage({ type: "TOGGLE_BLOCK_SITE", host: target }).catch(() => {});
           renderUserRules();
         });
       });
@@ -320,7 +422,7 @@ export function initRulesSection() {
         showRuleFeedback("Этот сайт уже в белом списке.", true);
         return;
       }
-      await chrome.runtime.sendMessage({ type: "TOGGLE_WHITELIST", host });
+      await chrome.runtime.sendMessage({ type: "TOGGLE_WHITELIST", host }).catch(() => {});
       newRuleHost.value = "";
       showRuleFeedback(`Сайт ${host} добавлен в белый список.`);
       renderUserRules();
@@ -330,11 +432,22 @@ export function initRulesSection() {
         showRuleFeedback("Этот сайт уже в чёрном списке.", true);
         return;
       }
-      await chrome.runtime.sendMessage({ type: "TOGGLE_BLOCK_SITE", host });
+      await chrome.runtime.sendMessage({ type: "TOGGLE_BLOCK_SITE", host }).catch(() => {});
       newRuleHost.value = "";
       showRuleFeedback(`Сайт ${host} добавлен в чёрный список.`);
       renderUserRules();
     }
+  });
+
+  $("#clearSiteOverridesBtn")?.addEventListener("click", async () => {
+    const cfg = await loadConfig();
+    if (!cfg.siteOverrides || Object.keys(cfg.siteOverrides).length === 0) return;
+    if (!confirm("Сбросить все индивидуальные настройки сайтов?")) return;
+    const cur = await loadConfig();
+    await chrome.storage.sync.set({ config: { ...cur, siteOverrides: {} } });
+    await notifyTabsBaseUpdated();
+    showRuleFeedback("Все индивидуальные настройки сайтов сброшены.");
+    renderUserRules();
   });
 
   $("#clearUserAdsBtn")?.addEventListener("click", async () => {
@@ -346,11 +459,15 @@ export function initRulesSection() {
   });
 
   $("#exportRulesBtn")?.addEventListener("click", async () => {
-    const rulesData = await chrome.storage.local.get(["astraUserAdBase", "userWhitelist", "userBlocklist"]);
+    const [rulesData, cfg] = await Promise.all([
+      chrome.storage.local.get(["astraUserAdBase", "userWhitelist", "userBlocklist"]),
+      loadConfig()
+    ]);
     const bundle = {
       type: "astra-user-rules",
       version: chrome.runtime.getManifest().version,
       exportedAt: new Date().toISOString(),
+      siteOverrides: cfg.siteOverrides || {},
       astraUserAdBase: rulesData.astraUserAdBase || [],
       userWhitelist: rulesData.userWhitelist || [],
       userBlocklist: rulesData.userBlocklist || [],
@@ -360,7 +477,9 @@ export function initRulesSection() {
     const a = document.createElement("a");
     a.href = url;
     a.download = `astra-rules-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
     a.click();
+    a.remove();
     URL.revokeObjectURL(url);
   });
 
@@ -377,6 +496,15 @@ export function initRulesSection() {
       showRuleFeedback("Ошибка импорта правил: " + err.message, true);
     } finally {
       e.target.value = "";
+    }
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && (changes.astraUserAdBase || changes.userWhitelist || changes.userBlocklist)) {
+      renderUserRules();
+    }
+    if (area === "sync" && changes.config) {
+      renderUserRules();
     }
   });
 

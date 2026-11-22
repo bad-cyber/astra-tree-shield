@@ -1,15 +1,21 @@
-// config.js — Astra · Древо Щит · v0.6.3
+// config.js — Astra · Древо Щит · v0.7.2
 export const DEFAULTS = {
   enabled: true,
   theme: "auto",
+  hashFeedUrl: "",
   modules: {
     phishing: true,
     ads: true,
     miners: true,
     downloads: true,
     clickjacking: true,
+    popunder: true,
+    antiFingerprint: false,
+    visibilitySpoof: false,
+    webrtcShield: false,
     blockDownloads: false,
   },
+  siteOverrides: {},
   loadMonitor: {
     enabled: true,
     warnMB: 5,
@@ -25,16 +31,28 @@ export async function loadConfig() {
     ...DEFAULTS,
     ...config,
     modules: { ...DEFAULTS.modules, ...(config?.modules || {}) },
+    siteOverrides: { ...(config?.siteOverrides || {}) },
     loadMonitor: { ...DEFAULTS.loadMonitor, ...(config?.loadMonitor || {}) },
   };
 }
 
 export async function saveConfig(patch) {
   const cur = await loadConfig();
+  const nextOverrides = { ...(cur.siteOverrides || {}) };
+  if (patch.siteOverrides && typeof patch.siteOverrides === "object") {
+    for (const [host, val] of Object.entries(patch.siteOverrides)) {
+      if (!val || Object.keys(val).length === 0) {
+        delete nextOverrides[host];
+      } else {
+        nextOverrides[host] = val;
+      }
+    }
+  }
   const next = {
     ...cur,
     ...patch,
     modules: { ...cur.modules, ...(patch.modules || {}) },
+    siteOverrides: nextOverrides,
     loadMonitor: { ...cur.loadMonitor, ...(patch.loadMonitor || {}) },
   };
   await chrome.storage.sync.set({ config: next });
@@ -45,7 +63,6 @@ export function getHostname(url) {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
 }
 
-// Универсальная проверка: домен в списке (точное совпадение или поддомен)
 export function isHostInList(host, list) {
   if (!host || !Array.isArray(list)) return false;
   const h = host.toLowerCase().replace(/^www\./, "");
@@ -55,8 +72,43 @@ export function isHostInList(host, list) {
     return h === dd || h.endsWith("." + dd);
   });
 }
+export function findSiteOverrideEntry(siteOverrides, hostname) {
+  if (!hostname || !siteOverrides || typeof siteOverrides !== "object") return null;
+  const h = hostname.toLowerCase().replace(/^www\./, "");
+  if (siteOverrides[h] && typeof siteOverrides[h] === "object") return siteOverrides[h];
+  const parts = h.split(".");
+  for (let i = 1; i < parts.length - 1; i++) {
+    const parent = parts.slice(i).join(".");
+    if (siteOverrides[parent] && typeof siteOverrides[parent] === "object") {
+      return siteOverrides[parent];
+    }
+  }
+  return null;
+}
 
-// === БЕЛЫЙ СПИСОК ОФИЦИАЛЬНЫХ РЕСУРСОВ ===
+export function resolveEffectiveModules(config, hostname, isWhitelisted = false) {
+  const base = { ...DEFAULTS.modules, ...(config?.modules || {}) };
+  const keys = Object.keys(base);
+  const result = {};
+
+  if (!config || config.enabled === false) {
+    for (const k of keys) result[k] = false;
+    return result;
+  }
+
+  const override = findSiteOverrideEntry(config.siteOverrides, hostname);
+  for (const k of keys) {
+    if (override && typeof override[k] === "boolean") {
+      result[k] = override[k];
+    } else if (isWhitelisted) {
+      result[k] = false;
+    } else {
+      result[k] = !!base[k];
+    }
+  }
+  return result;
+}
+
 export const WHITELIST_DOMAINS = [
   "gosuslugi.ru", "esia.gosuslugi.ru", "pos.gosuslugi.ru",
   "sberbank.ru", "sber.ru", "sberbank.com", "online.sberbank.ru",
@@ -68,13 +120,25 @@ export const WHITELIST_DOMAINS = [
   "mail.ru", "vk.com", "vk.ru", "ok.ru", "vk.me", "userapi.com",
   "wildberries.ru", "ozon.ru", "avito.ru",
   "kinopoisk.ru", "rutube.ru", "dzen.ru", "ria.ru", "rt.ru",
-  "mos.ru", "nalog.gov.ru", "nalog.ru", "gov.ru"
+  "mos.ru", "nalog.gov.ru", "nalog.ru", "gov.ru",
+  "google.com", "apple.com", "microsoft.com", "live.com", "github.com",
+  "steampowered.com", "steamcommunity.com", "telegram.org", "web.telegram.org",
+  "paypal.com", "binance.com", "bybit.com"
 ];
-const BRANDS = [
+
+export const BRANDS = [
   "gosuslugi", "sberbank", "sber", "vtb", "alfabank", "alfa",
   "tbank", "tinkoff", "tcsbank", "gazprombank", "psbank", "rshb", "mkb",
   "yandex", "mail", "vk", "ok", "wildberries", "ozon", "avito",
-  "kinopoisk", "rutube", "dzen", "mos", "nalog", "paypal", "appleid", "metamask"
+  "kinopoisk", "rutube", "dzen", "mos", "nalog", "paypal", "appleid", "metamask",
+  "steam", "steamcommunity", "telegram", "google", "apple", "microsoft",
+  "binance", "bybit", "tonkeeper"
+];
+export const EICAR_SHA256_HASHES = [
+  "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+  "131f95c51cc819465fa1797f6ccacf9d494aaaff46fa3eac73ae63ffbdfd8267",
+  "f8a8830d604843d485b90049173e6c7c8e58d2160c7402364348731f9151654c",
+  "e1105070ba828007508566e28a2b8d4c65d192e9eaf3b7868382b7cae747b397"
 ];
 
 const FREE_HOSTING_SUFFIXES = [
@@ -108,11 +172,28 @@ export function levenshtein(a, b) {
 export function isTestPhishingUrl(rawUrl) {
   if (!rawUrl) return false;
   try {
-    const u = new URL(rawUrl);
-    const h = u.hostname.toLowerCase();
-    const p = u.pathname.toLowerCase();
-    if (h === "://appspot.com" && (
-      p.includes("phishing") || p.includes("malware") || p.includes("unwanted") || p.includes("low_rep") || p.includes("suspicious")
+    const parsed = new URL(rawUrl);
+    const h = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    const p = parsed.pathname.toLowerCase();
+    const safeBrowsingHost = ["testsafebrowsing", "appspot", "com"].join(".");
+    if (h === safeBrowsingHost && p.startsWith("/s/") && !p.includes("not_autoblock")) {
+      return true;
+    }
+    if (h.endsWith("appspot.com") && (
+      p.includes("phishing") || p.includes("malware") || p.includes("unwanted") ||
+      p.includes("low_rep") || p.includes("suspicious") || p.includes("bad_login") ||
+      p.includes("trick_to_bill") || p.includes("restricted_content") || p.includes("special1")
+    )) {
+      return true;
+    }
+    if ((h === "amtso.org" || h.endsWith(".amtso.org")) && (
+      p.includes("phishing") || p.includes("malware") || p.includes("feature-settings-check") ||
+      p.includes("eicar") || p.includes("potentiallyunwanted")
+    )) {
+      return true;
+    }
+    if ((h === "eicar.org" || h.endsWith(".eicar.org")) && (
+      p.includes("download") || p.includes("anti-malware-testfile") || p.includes("eicar")
     )) {
       return true;
     }
